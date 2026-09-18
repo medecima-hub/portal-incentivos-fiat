@@ -1749,7 +1749,7 @@ async function guardarEnPortal(){
     STATE._cargadoDesdePortal = true;
     STATE._cargadoDesdeFecha = new Date().toISOString();
     renderCargaBanner();
-    renderRepositorio();
+    renderRepositorio(STATE.periodo);
   }catch(err){
     status.textContent = `✕ No se pudo guardar: ${(err && err.message) || err}`;
     status.style.color = '#c0392b';
@@ -1779,11 +1779,16 @@ function afterRestoreUI(){
   if($('#inp-periodo')) $('#inp-periodo').value = STATE.periodo;
 }
 
-async function renderRepositorio(){
+async function renderRepositorio(justSaved){
   const el = $('#repositorio-lista');
   if(!el) return;
   el.innerHTML = '<div style="font-size:12.5px;color:var(--ink-soft);">Buscando meses guardados…</div>';
-  const periodos = await listarPeriodos();
+  let periodos = await listarPeriodos();
+  // El índice de "meses guardados" puede tardar unos segundos en reflejar un
+  // guardado recién hecho (demora normal de Netlify Blobs). Si venimos de
+  // guardar ahora mismo, mostramos ese período igual aunque el listado
+  // todavía no lo traiga — el guardado en sí ya fue confirmado por el server.
+  if(justSaved && !periodos.includes(justSaved)) periodos = [justSaved, ...periodos];
   if(!periodos.length){ el.innerHTML = ''; return; }
   el.innerHTML = `
     <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">Meses guardados (repositorio):</div>
