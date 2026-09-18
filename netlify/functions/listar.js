@@ -1,5 +1,8 @@
 // Lista los períodos guardados de una marca (para el "repositorio" de meses).
 // GET ?marca=fiat -> { ok:true, periodos: ["2026-08", "2026-07", ...] }
+// Lee el índice que mantiene guardar.js en "<marca>--index" (no usamos el
+// LIST nativo de Netlify Blobs: no está disponible con las credenciales
+// "edge" que recibe esta función).
 const STORE = 'incentivos-portal';
 
 function getBlobsCreds(event) {
@@ -11,6 +14,17 @@ function getBlobsCreds(event) {
   return { siteID, edgeURL: info.url, token: info.token };
 }
 
+async function blobsGet(creds, key) {
+  const url = new URL(`/${creds.siteID}/${STORE}/${encodeURIComponent(key)}`, creds.edgeURL).toString();
+  const res = await fetch(url, { headers: { authorization: `Bearer ${creds.token}` } });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Netlify Blobs GET falló (${res.status}): ${body.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
 exports.handler = async (event) => {
   const headers = { 'content-type': 'application/json' };
   try {
@@ -20,23 +34,8 @@ exports.handler = async (event) => {
     if (!marca) {
       return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Falta marca' }) };
     }
-    const prefix = `${marca}--`;
-    const listURL = new URL(`/${creds.siteID}/${STORE}`, creds.edgeURL).toString() + `?prefix=${encodeURIComponent(prefix)}`;
-    const res = await fetch(listURL, { headers: { authorization: `Bearer ${creds.token}` } });
-    if (!res.ok && res.status !== 404) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`Netlify Blobs LIST falló (${res.status}): ${body.slice(0, 300)}`);
-    }
-    let periodos = [];
-    if (res.status !== 404) {
-      const page = await res.json();
-      const blobs = (page && page.blobs) || [];
-      periodos = blobs
-        .map((b) => String(b.key || '').slice(prefix.length))
-        .filter((p) => p && p !== 'current')
-        .sort()
-        .reverse();
-    }
+    const data = await blobsGet(creds, `${marca}--index`);
+    const periodos = (data && Array.isArray(data.periodos)) ? data.periodos : [];
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, periodos }) };
   } catch (err) {
     return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: String((err && err.message) || err) }) };

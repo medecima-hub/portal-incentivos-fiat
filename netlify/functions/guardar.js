@@ -1,9 +1,12 @@
 // Guarda el estado completo de una marca en Netlify Blobs.
 // POST body JSON: { marca: "fiat", periodo: "2026-08", state: {...} }
-// Guarda dos claves: "<marca>--current" (siempre la última) y
-// "<marca>--<periodo>" (archivo histórico de ese mes), para poder
-// tener un link único que siempre muestra lo último Y un repositorio
-// de meses anteriores.
+// Guarda tres claves:
+//  - "<marca>--current"        (siempre la última, para el link único)
+//  - "<marca>--<periodo>"      (archivo histórico de ese mes)
+//  - "<marca>--index"          (lista de períodos guardados, para el repositorio)
+// Nota: el LIST nativo de Netlify Blobs no está disponible con las credenciales
+// "edge" que recibe esta función (event.blobs), así que mantenemos nosotros
+// mismos ese índice en vez de depender de esa API.
 const STORE = 'incentivos-portal';
 
 function getBlobsCreds(event) {
@@ -13,6 +16,17 @@ function getBlobsCreds(event) {
   const siteID = event.headers && (event.headers['x-nf-site-id'] || event.headers['X-Nf-Site-Id']);
   if (!siteID || !info.url || !info.token) throw new Error('Faltan credenciales de Blobs (siteID/url/token).');
   return { siteID, edgeURL: info.url, token: info.token };
+}
+
+async function blobsGet(creds, key) {
+  const url = new URL(`/${creds.siteID}/${STORE}/${encodeURIComponent(key)}`, creds.edgeURL).toString();
+  const res = await fetch(url, { headers: { authorization: `Bearer ${creds.token}` } });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Netlify Blobs GET falló (${res.status}): ${body.slice(0, 300)}`);
+  }
+  return res.json();
 }
 
 async function blobsPut(creds, key, value) {
@@ -46,6 +60,12 @@ exports.handler = async (event) => {
     await blobsPut(creds, `${marca}--current`, payload);
     if (periodo) {
       await blobsPut(creds, `${marca}--${periodo}`, payload);
+      const indexKey = `${marca}--index`;
+      const existing = (await blobsGet(creds, indexKey)) || { periodos: [] };
+      const periodos = Array.isArray(existing.periodos) ? existing.periodos.slice() : [];
+      if (!periodos.includes(periodo)) periodos.push(periodo);
+      periodos.sort().reverse();
+      await blobsPut(creds, indexKey, { periodos });
     }
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
   } catch (err) {
