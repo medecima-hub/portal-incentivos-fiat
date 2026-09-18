@@ -1,0 +1,1864 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Peara · Fiat — Estimador de Incentivos</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧮</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1B2430;
+  --ink-soft:#4A5568;
+  --paper:#F3F1EA;
+  --paper-raised:#FFFFFF;
+  --line:#DAD5C7;
+  --line-strong:#B9B2A0;
+  --copper:#B5541F;
+  --copper-soft:#EFDCCB;
+  --green:#2F6B4F;
+  --green-soft:#DCEAE1;
+  --brick:#A63A3A;
+  --brick-soft:#F4DEDA;
+  --amber:#9C6B12;
+  --amber-soft:#F3E6C8;
+  --radius:3px;
+  --serif: "Fraunces", Georgia, "Times New Roman", serif;
+  --sans: "Space Grotesk", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#ECE8DD; --ink-soft:#B7B0A0; --paper:#181712; --paper-raised:#211F19;
+    --line:#3A362B; --line-strong:#524C3C;
+    --copper:#E08A4E; --copper-soft:#3A2A1C;
+    --green:#6FBF95; --green-soft:#1D3327;
+    --brick:#E08080; --brick-soft:#3A2020;
+    --amber:#D9A94B; --amber-soft:#332A14;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#ECE8DD; --ink-soft:#B7B0A0; --paper:#181712; --paper-raised:#211F19;
+  --line:#3A362B; --line-strong:#524C3C;
+  --copper:#E08A4E; --copper-soft:#3A2A1C;
+  --green:#6FBF95; --green-soft:#1D3327;
+  --brick:#E08080; --brick-soft:#3A2020;
+  --amber:#D9A94B; --amber-soft:#332A14;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:15px;
+  line-height:1.5;
+  min-height:100vh;
+}
+h1,h2,h3{font-family:var(--serif); font-weight:600; letter-spacing:-0.01em; margin:0;}
+.num{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+a{color:var(--copper);}
+button{font-family:var(--sans); cursor:pointer;}
+
+/* ---------- shell layout ---------- */
+.shell{
+  display:grid;
+  grid-template-columns:240px 1fr;
+  min-height:100vh;
+}
+@media (max-width: 860px){
+  .shell{grid-template-columns:1fr;}
+  .railwrap{position:static !important;}
+}
+
+.railwrap{
+  border-right:1px solid var(--line);
+  background:var(--paper-raised);
+  position:sticky; top:0; height:100vh; overflow:auto;
+}
+.brand{
+  padding:22px 20px 14px;
+  border-bottom:1px solid var(--line);
+}
+.brand .mark{font-size:22px; line-height:1;}
+.brand h1{font-size:17px; margin-top:8px;}
+.brand p{margin:4px 0 0; font-size:12px; color:var(--ink-soft);}
+
+.rail{list-style:none; margin:0; padding:14px 10px; counter-reset:step;}
+.rail li{
+  counter-increment:step;
+  display:flex; align-items:flex-start; gap:10px;
+  padding:10px 10px;
+  border-radius:var(--radius);
+  margin-bottom:2px;
+  cursor:pointer;
+  border:1px solid transparent;
+}
+.rail li .n{
+  font-family:var(--mono); font-size:12px; width:20px; height:20px; flex:0 0 20px;
+  border:1px solid var(--line-strong); border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--ink-soft);
+}
+.rail li .t{font-size:13.5px; padding-top:1px;}
+.rail li .d{font-size:11px; color:var(--ink-soft); margin-top:1px;}
+.rail li.active{background:var(--copper-soft); border-color:var(--copper);}
+.rail li.active .n{background:var(--copper); border-color:var(--copper); color:#fff;}
+.rail li.done .n{background:var(--green); border-color:var(--green); color:#fff;}
+.rail li.done .n::after{content:"✓";}
+.rail li.locked{opacity:.45; cursor:not-allowed;}
+
+.railfoot{padding:14px 20px; border-top:1px solid var(--line); font-size:11px; color:var(--ink-soft);}
+
+/* ---------- main ---------- */
+main{padding:36px 44px 90px; max-width:980px;}
+@media (max-width:640px){ main{padding:24px 18px 90px;} }
+
+.step{display:none;}
+.step.active{display:block; animation:rise .35s ease;}
+@keyframes rise{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
+
+.stephead{margin-bottom:26px;}
+.eyebrow{
+  font-family:var(--mono); font-size:11.5px; color:var(--copper);
+}
+.stephead h2{font-size:28px; margin-top:6px;}
+.stephead p{color:var(--ink-soft); max-width:62ch; margin:10px 0 0; font-size:14.5px;}
+
+.panel{
+  background:var(--paper-raised);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:22px 24px;
+  margin-bottom:18px;
+}
+.panel h3{font-size:15px; margin-bottom:12px;}
+
+/* dropzone */
+.drop{
+  border:1.5px dashed var(--line-strong);
+  border-radius:var(--radius);
+  padding:30px 20px;
+  text-align:center;
+  cursor:pointer;
+  background:var(--paper);
+  transition:border-color .15s, background .15s;
+}
+.drop:hover, .drop.drag{border-color:var(--copper); background:var(--copper-soft);}
+.drop .icon{font-size:26px; margin-bottom:8px;}
+.drop .main{font-size:14px;}
+.drop .sub{font-size:12px; color:var(--ink-soft); margin-top:4px;}
+.drop input{display:none;}
+.filepill{
+  display:inline-flex; align-items:center; gap:8px;
+  background:var(--green-soft); color:var(--green);
+  border:1px solid var(--green);
+  padding:6px 12px; border-radius:20px; font-size:12.5px; margin-top:12px;
+}
+.filepill button{background:none; border:none; color:var(--green); font-size:14px; padding:0; line-height:1;}
+
+/* forms */
+label{display:block; font-size:12.5px; color:var(--ink-soft); margin-bottom:5px;}
+input[type=text], input[type=number], select, textarea{
+  width:100%;
+  font-family:var(--sans);
+  font-size:14px;
+  padding:9px 10px;
+  border:1px solid var(--line-strong);
+  border-radius:var(--radius);
+  background:var(--paper-raised);
+  color:var(--ink);
+}
+input[type=number]{font-family:var(--mono);}
+.field{margin-bottom:14px;}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+.grid3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px;}
+@media (max-width:640px){.grid2,.grid3{grid-template-columns:1fr;}}
+.checkline{display:flex; align-items:center; gap:8px; font-size:13.5px;}
+.checkline input{width:auto;}
+
+/* tables */
+.tblwrap{overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius);}
+table{width:100%; border-collapse:collapse; font-size:13px; min-width:560px;}
+thead th{
+  text-align:left; font-size:11px; font-family:var(--mono); font-weight:500;
+  color:var(--ink-soft); background:var(--paper);
+  padding:9px 10px; border-bottom:1px solid var(--line); white-space:nowrap;
+}
+tbody td{padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:middle;}
+tbody tr:last-child td{border-bottom:none;}
+tbody tr:hover{background:var(--paper);}
+td.num, th.num{text-align:right; font-family:var(--mono);}
+td input[type=text], td input[type=number]{padding:5px 7px; font-size:13px;}
+td select{padding:5px 7px; font-size:12.5px;}
+.rowbtn{background:none; border:none; color:var(--brick); font-size:15px; padding:2px 4px;}
+.tblfoot{display:flex; justify-content:space-between; align-items:center; padding:8px 4px 0;}
+.addrow{
+  background:none; border:1px dashed var(--line-strong); color:var(--ink-soft);
+  border-radius:var(--radius); padding:6px 12px; font-size:12.5px;
+}
+.addrow:hover{border-color:var(--copper); color:var(--copper);}
+
+/* badges */
+.badge{
+  display:inline-flex; align-items:center; gap:5px;
+  font-size:11px; font-family:var(--mono);
+  padding:2px 8px; border-radius:20px; white-space:nowrap;
+}
+.badge.alto{background:var(--green-soft); color:var(--green);}
+.badge.medio{background:var(--amber-soft); color:var(--amber);}
+.badge.bajo{background:var(--brick-soft); color:var(--brick);}
+.badge.vin{background:var(--copper-soft); color:var(--copper);}
+
+/* buttons */
+.btn{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:11px 20px; border-radius:var(--radius);
+  font-size:14px; font-weight:600; border:1px solid transparent;
+}
+.btn-primary{background:var(--ink); color:var(--paper);}
+.btn-primary:hover{background:var(--copper);}
+.btn-primary:disabled{background:var(--line-strong); cursor:not-allowed;}
+.btn-ghost{background:none; border:1px solid var(--line-strong); color:var(--ink);}
+.btn-ghost:hover{border-color:var(--ink);}
+.actions{display:flex; justify-content:space-between; margin-top:26px; gap:12px;}
+
+/* callouts */
+.callout{
+  display:flex; gap:10px; padding:12px 14px; border-radius:var(--radius);
+  font-size:13px; border:1px solid; margin-bottom:14px;
+}
+.callout.info{background:var(--copper-soft); border-color:var(--copper); color:var(--ink);}
+.callout.warn{background:var(--amber-soft); border-color:var(--amber); color:var(--ink);}
+.callout.error{background:var(--brick-soft); border-color:var(--brick); color:var(--ink);}
+.callout .ic{font-size:15px; flex:0 0 auto;}
+
+details.raw{margin-top:10px; font-size:12.5px; color:var(--ink-soft);}
+details.raw pre{
+  white-space:pre-wrap; max-height:260px; overflow:auto; background:var(--paper);
+  border:1px solid var(--line); padding:10px; border-radius:var(--radius); font-family:var(--mono); font-size:11px;
+}
+
+/* loader */
+.loading{display:flex; align-items:center; gap:10px; font-size:13px; color:var(--ink-soft);}
+.spin{width:14px; height:14px; border-radius:50%; border:2px solid var(--line-strong); border-top-color:var(--copper); animation:sp .7s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg);}}
+
+/* result hero */
+.resulthead{
+  background:var(--ink); color:var(--paper);
+  border-radius:var(--radius); padding:30px 28px; margin-bottom:20px;
+}
+.resulthead .label{font-family:var(--mono); font-size:12px; opacity:.7; letter-spacing:.02em;}
+.resulthead .total{font-family:var(--serif); font-size:44px; font-weight:600; margin-top:6px;}
+.resulthead .sub{font-size:13px; opacity:.75; margin-top:6px;}
+
+.breakdown{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px;}
+@media (max-width:640px){.breakdown{grid-template-columns:1fr;}}
+.bcard{background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px;}
+.bcard .k{font-size:12px; color:var(--ink-soft);}
+.bcard .v{font-family:var(--mono); font-size:22px; margin-top:6px;}
+.bcard .x{font-size:11.5px; color:var(--ink-soft); margin-top:4px;}
+
+.metrics{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:20px;}
+@media (max-width:640px){.metrics{grid-template-columns:1fr;}}
+.mcard{border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; background:var(--paper-raised);}
+.mcard .row{display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px;}
+.mcard .bar{height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:8px;}
+.mcard .bar > div{height:100%; background:var(--green);}
+.mcard.short .bar > div{background:var(--brick);}
+
+@media print{
+  .railwrap, .actions, .no-print{display:none !important;}
+  .shell{display:block;}
+  main{padding:0; max-width:none;}
+  .step{display:none !important;}
+  .step.print-active{display:block !important;}
+  body{background:#fff;}
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <div class="railwrap">
+    <div class="brand">
+      <a href="../" style="font-family:var(--mono);font-size:11px;color:var(--ink-soft);text-decoration:none;">← Portal de Incentivos</a>
+      <div class="mark" style="margin-top:10px;">🧮</div>
+      <h1>Peara · Fiat</h1>
+      <p>Circular · Lista de precios · Patentamientos</p>
+    </div>
+    <ul class="rail" id="rail"></ul>
+    <div class="railfoot">Los archivos se leen en tu navegador. Al guardar (Paso 6), ese resultado sí se sube a Netlify para que el link sea compartible.</div>
+  </div>
+
+  <main>
+    <div id="carga-banner"></div>
+    <div id="steps">
+
+      <!-- =========================== STEP 1 — CIRCULAR =========================== -->
+      <section class="step" data-step="circular">
+        <div class="stephead">
+          <div class="eyebrow">Paso 1 de 6</div>
+          <h2>Subí la circular / propuesta comercial</h2>
+          <p>El PDF de la terminal con los objetivos del mes y las tablas de bonus Retail y Wholesale. Vamos a intentar leerlo solos — revisá y corregí lo que haga falta antes de seguir.</p>
+        </div>
+
+        <div class="panel">
+          <div class="drop" id="drop-circular">
+            <input type="file" id="file-circular" accept="application/pdf">
+            <div class="icon">📄</div>
+            <div class="main">Arrastrá el PDF acá, o hacé clic para elegirlo</div>
+            <div class="sub">Solo se procesa en tu navegador</div>
+            <div id="circular-filepill"></div>
+          </div>
+          <div id="circular-status"></div>
+        </div>
+
+        <div id="circular-form" style="display:none">
+          <div class="panel">
+            <h3>Nombre de la terminal / marca</h3>
+            <div class="grid2">
+              <div class="field">
+                <label>Para identificar este cuadro (ej. "Fiat", "Peugeot")</label>
+                <input type="text" id="inp-terminal" placeholder="Fiat">
+              </div>
+              <div class="field">
+                <label>Período (mes de esta circular)</label>
+                <input type="text" id="inp-periodo" placeholder="2026-08">
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Objetivos y montos del mes</h3>
+            <div class="grid3">
+              <div class="field">
+                <label>Objetivo Retail Gral. (unidades)</label>
+                <input type="number" id="inp-objRetail" min="0">
+              </div>
+              <div class="field">
+                <label>Objetivo Wholesale (unidades)</label>
+                <input type="number" id="inp-objWholesale" min="0">
+              </div>
+              <div class="field">
+                <label>Monto fijo incentivo 2d ($, IVA incluido)</label>
+                <input type="number" id="inp-monto2d" min="0">
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Tabla de bonus Retail</h3>
+            <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px;">Porcentaje que cobra cada versión patentada, sobre el precio concesionario sin impuestos.</p>
+            <div class="tblwrap"><table id="tbl-retailBonus">
+              <thead><tr><th>Versión</th><th class="num">Bonus Retail</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+            <div class="tblfoot"><button class="addrow" data-add="retailBonus">+ agregar versión</button><span></span></div>
+          </div>
+
+          <div class="panel">
+            <h3>Tabla de bonus Wholesale</h3>
+            <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px;">Porcentaje que cobra cada versión facturada, sobre el precio concesionario sin impuestos.</p>
+            <div class="tblwrap"><table id="tbl-wholesaleBonus">
+              <thead><tr><th>Versión</th><th class="num">Bonus Wholesale</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+            <div class="tblfoot"><button class="addrow" data-add="wholesaleBonus">+ agregar versión</button><span></span></div>
+          </div>
+
+          <details class="raw"><summary>Ver texto extraído del PDF (para copiar datos a mano si algo no se detectó bien)</summary><pre id="circular-rawtext"></pre></details>
+        </div>
+
+        <div class="actions">
+          <span></span>
+          <button class="btn btn-primary" id="btn-circular-next" disabled>Continuar →</button>
+        </div>
+      </section>
+
+      <!-- =========================== STEP 2 — PRECIOS =========================== -->
+      <section class="step" data-step="precios">
+        <div class="stephead">
+          <div class="eyebrow">Paso 2 de 6</div>
+          <h2>Subí la lista de precios</h2>
+          <p>El Excel con el precio concesionario de cada versión. Elegí qué hoja y qué columnas usar.</p>
+        </div>
+
+        <div class="panel">
+          <div class="drop" id="drop-precios">
+            <input type="file" id="file-precios" accept=".xlsx,.xls">
+            <div class="icon">📊</div>
+            <div class="main">Arrastrá el Excel acá, o hacé clic para elegirlo</div>
+            <div class="sub">.xlsx o .xls</div>
+            <div id="precios-filepill"></div>
+          </div>
+        </div>
+
+        <div id="precios-form" style="display:none">
+          <div class="panel">
+            <h3>Hoja y columnas</h3>
+            <div class="grid2">
+              <div class="field">
+                <label>Hoja del Excel</label>
+                <select id="sel-precios-sheet"></select>
+              </div>
+              <div class="field">
+                <label>¿El precio ya está sin IVA?</label>
+                <select id="sel-precios-iva">
+                  <option value="sin">Sí, ya es precio sin impuestos</option>
+                  <option value="neto">No, tiene IVA — netear automático: autos 21% / comerciales 10,5%</option>
+                </select>
+                <div id="precios-iva-help" style="display:none;font-size:12.5px;color:var(--ink-soft);margin-top:4px;">
+                  Se detecta "comercial" (10,5%) por nombre — Fiorino, Strada, Toro, Titano — el resto se
+                  netea como auto (21%). Podés corregir el tipo de cada versión en la columna "Tipo" de la
+                  vista previa.
+                </div>
+              </div>
+            </div>
+            <div class="grid3">
+              <div class="field">
+                <label>Columna: Código SAP (opcional)</label>
+                <select id="sel-precios-codigo"></select>
+              </div>
+              <div class="field">
+                <label>Columna: Modelo / versión</label>
+                <select id="sel-precios-modelo"></select>
+              </div>
+              <div class="field">
+                <label>Columna: Precio</label>
+                <select id="sel-precios-precio"></select>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Vista previa <span id="precios-count" style="font-weight:400;color:var(--ink-soft);"></span></h3>
+            <div class="tblwrap"><table id="tbl-precios">
+              <thead><tr><th>Código</th><th>Modelo</th><th>Tipo</th><th class="num">Precio s/IVA</th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-ghost" data-back>← Atrás</button>
+          <button class="btn btn-primary" id="btn-precios-next" disabled>Continuar →</button>
+        </div>
+      </section>
+
+      <!-- =========================== STEP 3 — PATENTAMIENTOS =========================== -->
+      <section class="step" data-step="patentamientos">
+        <div class="stephead">
+          <div class="eyebrow">Paso 3 de 6</div>
+          <h2>Subí la base de patentamientos</h2>
+          <p>El Excel con las unidades Retail patentadas en el mes (tal cual sale del sistema / RNPA).</p>
+        </div>
+
+        <div class="panel">
+          <div class="drop" id="drop-pat">
+            <input type="file" id="file-pat" accept=".xlsx,.xls">
+            <div class="icon">🚗</div>
+            <div class="main">Arrastrá el Excel acá, o hacé clic para elegirlo</div>
+            <div class="sub">.xlsx o .xls</div>
+            <div id="pat-filepill"></div>
+          </div>
+        </div>
+
+        <div id="pat-form" style="display:none">
+          <div class="panel">
+            <h3>Hoja y columnas</h3>
+            <div class="field">
+              <label>Hoja del Excel</label>
+              <select id="sel-pat-sheet"></select>
+            </div>
+            <div class="grid3">
+              <div class="field">
+                <label>Columna: Modelo <span style="color:var(--brick)">*</span></label>
+                <select id="sel-pat-modelo"></select>
+              </div>
+              <div class="field">
+                <label>Columna: Patente (opcional)</label>
+                <select id="sel-pat-patente"></select>
+              </div>
+              <div class="field">
+                <label>Columna: VIN (opcional, mejora el matching)</label>
+                <select id="sel-pat-vin"></select>
+              </div>
+            </div>
+            <div class="grid2">
+              <div class="field">
+                <label>Columna: Fecha de patentamiento (opcional)</label>
+                <select id="sel-pat-fecha"></select>
+              </div>
+              <div class="field">
+                <label>Columna: Tipo de venta (opcional)</label>
+                <select id="sel-pat-tipo"></select>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Vista previa <span id="pat-count" style="font-weight:400;color:var(--ink-soft);"></span></h3>
+            <div class="tblwrap"><table id="tbl-pat">
+              <thead></thead>
+              <tbody></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-ghost" data-back>← Atrás</button>
+          <button class="btn btn-primary" id="btn-pat-next" disabled>Continuar →</button>
+        </div>
+      </section>
+
+      <!-- =========================== STEP 4 — MATCH =========================== -->
+      <section class="step" data-step="match">
+        <div class="stephead">
+          <div class="eyebrow">Paso 4 de 6</div>
+          <h2>Emparejá cada modelo</h2>
+          <p>Sugerimos automáticamente el precio y el % de bonus para cada texto de modelo distinto que aparece en tus patentamientos (usando el VIN cuando está disponible). Revisá y corregí lo que haga falta — es por modelo, no por unidad.</p>
+        </div>
+        <div id="match-summary"></div>
+        <div class="panel" style="padding:0;">
+          <div class="tblwrap" style="border:none;"><table id="tbl-match">
+            <thead><tr>
+              <th>Modelo (reporte)</th><th class="num">Uds.</th>
+              <th>Precio s/IVA</th><th>% Bonus Retail</th><th>% Bonus Wholesale</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table></div>
+        </div>
+        <div id="match-tipos"></div>
+        <div class="actions">
+          <button class="btn btn-ghost" data-back>← Atrás</button>
+          <button class="btn btn-primary" id="btn-match-next">Continuar →</button>
+        </div>
+      </section>
+
+      <!-- =========================== STEP 5 — SUPUESTOS =========================== -->
+      <section class="step" data-step="supuestos">
+        <div class="stephead">
+          <div class="eyebrow">Paso 5 de 6</div>
+          <h2>Wholesale y supuestos finales</h2>
+          <p>El incentivo 2b (Wholesale) y el 2d (Retail atado a Wholesale) dependen de las unidades facturadas, que normalmente no están en la base de patentamientos.</p>
+        </div>
+
+        <div class="panel">
+          <h3>Cumplimiento Retail (automático)</h3>
+          <div id="supuestos-retail"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Wholesale</h3>
+          <div class="checkline" style="margin-bottom:14px;">
+            <input type="checkbox" id="chk-wholesale-100" checked>
+            <label for="chk-wholesale-100" style="margin:0;">Asumir 100% de cumplimiento Wholesale</label>
+          </div>
+          <div class="grid2" id="wholesale-manual" style="display:none;">
+            <div class="field">
+              <label>Unidades Wholesale facturadas</label>
+              <input type="number" id="inp-wholesale-unidades" min="0">
+            </div>
+            <div class="field">
+              <label>Objetivo Wholesale</label>
+              <input type="number" id="inp-wholesale-objetivo" disabled>
+            </div>
+          </div>
+          <div id="wholesale-cumpl" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-ghost" data-back>← Atrás</button>
+          <button class="btn btn-primary" id="btn-supuestos-next">Ver resultado →</button>
+        </div>
+      </section>
+
+      <!-- =========================== STEP 6 — RESULTADO =========================== -->
+      <section class="step" data-step="resultado">
+        <div class="stephead no-print">
+          <div class="eyebrow">Paso 6 de 6</div>
+          <h2>Cuadro de incentivos</h2>
+          <p>Estimación a valores de la circular cargada. Revisá los supuestos marcados antes de usarlo para decidir.</p>
+        </div>
+        <div id="resultado-body"></div>
+
+        <div class="panel no-print">
+          <h3>Guardar en el portal</h3>
+          <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px;">
+            Esto sube el resultado a Netlify: cualquiera que abra <strong>este mismo link</strong>
+            (<code>/fiat/</code>) va a ver esta carga sin tener que subir los archivos de nuevo.
+            Si más tarde corregís algo, volvé a guardar y se actualiza para todos.
+          </p>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-primary" id="btn-guardar-portal">☁ Guardar en el portal</button>
+            <span id="guardar-status" style="font-size:13px;"></span>
+          </div>
+          <div id="repositorio-lista" style="margin-top:14px;"></div>
+        </div>
+
+        <div class="actions no-print">
+          <button class="btn btn-ghost" id="btn-restart">↺ Empezar de nuevo</button>
+          <div style="display:flex; gap:10px;">
+            <button class="btn btn-ghost" id="btn-export-csv">⇩ Descargar CSV detalle</button>
+            <button class="btn btn-primary" id="btn-print">🖨 Imprimir / Guardar PDF</button>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+/* =====================================================================
+   UTILIDADES
+   ===================================================================== */
+const $ = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+function money(n){
+  if(n === null || n === undefined || isNaN(n)) return '—';
+  return new Intl.NumberFormat('es-AR', {style:'currency', currency:'ARS', maximumFractionDigits:0}).format(n);
+}
+function pct(n, digits=1){
+  if(n === null || n === undefined || isNaN(n)) return '—';
+  return (n*100).toFixed(digits).replace('.', ',') + '%';
+}
+function num(n){
+  if(n === null || n === undefined || isNaN(n)) return '—';
+  return new Intl.NumberFormat('es-AR').format(n);
+}
+function normalize(s){
+  return String(s || '')
+    .toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita acentos
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim();
+}
+function tokenize(s){ return normalize(s).split(' ').filter(Boolean); }
+
+// puntaje de similitud 0..1 entre dos textos libres. Da todo el peso a las
+// palabras (ARGO, DRIVE, CVT, TURBO...) y casi nada a los tokens puramente
+// numéricos (1, 3, 25, 26...), que son comunes a un montón de versiones
+// distintas y si no se les baja el peso, diluyen la coincidencia real
+// (ej. "ARGO...CVT L/26" terminaba pareciéndose más a "PULSE...1.3 CVT MCA"
+// que a "ARGO DRIVE MT" solo por compartir los números).
+function scoreMatch(a, b){
+  const at = tokenize(a), bt = tokenize(b);
+  if(!at.length || !bt.length) return 0;
+  const isWord = t => !/^\d+$/.test(t) && t.length >= 2;
+  const wordsA = new Set(at.filter(isWord)), wordsB = new Set(bt.filter(isWord));
+  const jaccard = (setA, setB) => {
+    if(!setA.size || !setB.size) return 0;
+    let inter = 0; setA.forEach(t => { if(setB.has(t)) inter++; });
+    return inter / new Set([...setA, ...setB]).size;
+  };
+  let score = jaccard(wordsA, wordsB);
+  if(score === 0){ // sin palabras en común: como último recurso, mirar todos los tokens
+    score = jaccard(new Set(at), new Set(bt)) * 0.4;
+  }
+  // penalizar cuando los dos textos especifican un tipo de TRANSMISIÓN
+  // (MT / CVT / AT) y no coincide: son mutuamente excluyentes, así que es
+  // casi seguro que se trata de otra versión (ej. "ARGO ... CVT" no es
+  // "ARGO DRIVE MT", aunque compartan casi todas las demás palabras).
+  // Ojo: NO se penaliza por TURBO/HYBRID/AWD/etc., porque esos SÍ pueden
+  // convivir con cualquier transmisión y describir el mismo auto visto
+  // desde otro ángulo (ej. "RANCH CVT" y "RANCH 1.0 TURBO" son el mismo).
+  const transOf = (words) => {
+    for(const t of words){ if(t === 'MT' || t === 'CVT' || t === 'AT' || /^AT\d/.test(t)) return t.replace(/^AT\d.*/, 'AT'); }
+    return null;
+  };
+  const transA = transOf(wordsA), transB = transOf(wordsB);
+  if(transA && transB && transA !== transB){
+    score *= 0.35;
+  }
+  // la primera palabra "de marca" suele ser la línea del modelo (ARGO,
+  // CRONOS, PULSE, STRADA...): si no coincide, es casi seguro que son
+  // autos distintos, aunque compartan palabras genéricas como "DRIVE" o
+  // "CVT". Se ignoran prefijos de marketing ("NUEVA...") y sufijos de
+  // cilindrada tipo "1.2T"/"2L", que no son el nombre del modelo.
+  const FIRST_STOP = new Set(['NUEVA','NUEVO','LA','EL','ALL','NEW','LINEA']);
+  const isBrandish = t => t.length >= 3 && !/^\d+$/.test(t) && !/^\d+[A-Z]{1,3}$/.test(t) && !FIRST_STOP.has(t);
+  const firstA = at.find(isBrandish);
+  const firstB = bt.find(isBrandish);
+  if(firstA && firstB && firstA !== firstB){
+    score *= 0.3;
+  }
+  const na = normalize(a), nb = normalize(b);
+  if(na.includes(nb) || nb.includes(na)) score = Math.min(1, score + 0.2);
+  return score;
+}
+function confidenceLabel(score){
+  if(score >= 0.55) return 'alto';
+  if(score >= 0.28) return 'medio';
+  return 'bajo';
+}
+// intenta encontrar, dentro de un VIN, el "core" alfanumérico de un código SAP
+// (los VIN de fabricación local suelen traer el código de versión incrustado)
+// núcleo "buscable" de un código SAP: saca el prefijo "00-" y el sufijo de
+// revisión/variante al final (ej. "00-359-AK2-1" -> "359AK2"), porque ese
+// sufijo casi nunca aparece contiguo en el VIN.
+function codigoCore(codigo){
+  const parts = String(codigo || '').toUpperCase().split('-').filter(Boolean);
+  while(parts.length > 1 && /^0+$/.test(parts[0])) parts.shift();
+  if(parts.length > 1 && /^\d{1,2}$/.test(parts[parts.length - 1])) parts.pop();
+  return parts.join('').replace(/[^A-Z0-9]/g, '');
+}
+function vinMatch(vin, priceList){
+  if(!vin) return null;
+  const v = String(vin).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if(v.length < 6) return null;
+  let best = null, bestLen = 0;
+  priceList.forEach(p => {
+    if(!p.codigo) return;
+    const core = codigoCore(p.codigo);
+    if(core.length >= 5 && v.includes(core) && core.length > bestLen){
+      best = p; bestLen = core.length;
+    }
+  });
+  return best;
+}
+function uid(){ return Math.random().toString(36).slice(2, 10); }
+
+function downloadCSV(filename, rows){
+  const csv = rows.map(r => r.map(c => {
+    const s = String(c ?? '');
+    return /[",;\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(';')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+
+/* =====================================================================
+   ESTADO GLOBAL
+   ===================================================================== */
+const STATE = {
+  terminal: 'Fiat',
+  periodo: '', // "2026-08" — identifica el mes, se usa como clave al guardar en el portal
+  circular: {
+    fileName: null,
+    rawText: '',
+    objetivoRetail: null,
+    objetivoWholesale: null,
+    monto2d: 819000,
+    mercadoReferencia: null,
+    retailBonus: [],     // [{id, version, pct}]
+    wholesaleBonus: [],  // [{id, version, pct}]
+  },
+  precios: {
+    fileName: null, sheetName: null, sheetNames: [], rawRows: [],
+    colCodigo: null, colModelo: null, colPrecio: null, ivaMode: 'sin', // sin | neto
+    precioTipoOverrides: {}, // MODELO (mayúsc.) -> 'auto' | 'comercial', corrección manual de la detección
+    rows: [], // [{codigo, modelo, precio, tipo}]
+  },
+  patentamientos: {
+    fileName: null, sheetName: null, sheetNames: [], rawRows: [],
+    colPatente: null, colModelo: null, colVin: null, colFecha: null, colTipo: null,
+    rows: [], // [{patente, modelo, vin, fecha, tipo}]
+  },
+  matches: {}, // modeloText -> {precioIdx, retailIdx, wholesaleIdx, manualPrecio, manualRetailPct, manualWholesalePct}
+  tipoOverrides: {}, // tipoVenta (''=en blanco) -> {excluirRetail:bool, excluirWholesale:bool}
+  wholesale: { asumido:true, unidades:null, pctManual:null },
+};
+
+const STEPS = [
+  {id:'circular',   n:1, title:'Circular / Propuesta', desc:'Objetivos y bonus'},
+  {id:'precios',    n:2, title:'Lista de precios', desc:'Precio por versión'},
+  {id:'patentamientos', n:3, title:'Base de patentamientos', desc:'Ventas del mes'},
+  {id:'match',      n4:4, n:4, title:'Emparejar modelos', desc:'Revisar coincidencias'},
+  {id:'supuestos',  n:5, title:'Supuestos', desc:'Wholesale y ajustes'},
+  {id:'resultado',  n:6, title:'Resultado', desc:'Cuadro de incentivos'},
+];
+let currentStep = 0;
+let maxUnlocked = 0;
+
+function renderRail(){
+  const rail = $('#rail');
+  rail.innerHTML = STEPS.map((s, i) => {
+    let cls = '';
+    if(i === currentStep) cls = 'active';
+    else if(i < maxUnlocked) cls = 'done';
+    else if(i > maxUnlocked) cls = 'locked';
+    return `<li class="${cls}" data-i="${i}">
+      <div class="n">${s.n}</div>
+      <div>
+        <div class="t">${s.title}</div>
+        <div class="d">${s.desc}</div>
+      </div>
+    </li>`;
+  }).join('');
+  $$('#rail li').forEach(li => {
+    li.addEventListener('click', () => {
+      const i = Number(li.dataset.i);
+      if(i <= maxUnlocked) goToStep(i);
+    });
+  });
+}
+
+function goToStep(i){
+  currentStep = i;
+  if(i > maxUnlocked) maxUnlocked = i;
+  renderRail();
+  $$('.step').forEach((el, idx) => el.classList.toggle('active', idx === i));
+  window.scrollTo({top:0, behavior:'smooth'});
+  RENDERERS[STEPS[i].id] && RENDERERS[STEPS[i].id]();
+}
+function unlockNext(){
+  maxUnlocked = Math.max(maxUnlocked, currentStep + 1);
+  goToStep(currentStep + 1);
+}
+
+const RENDERERS = {}; // se completan más abajo, una función de render por paso
+
+/* =====================================================================
+   DROPZONES genéricas
+   ===================================================================== */
+function wireDropzone(dropId, inputId, onFile){
+  const drop = $('#' + dropId), input = $('#' + inputId);
+  drop.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => { if(input.files[0]) onFile(input.files[0]); });
+  ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+  drop.addEventListener('drop', e => { if(e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]); });
+}
+function showPill(containerId, filename){
+  $('#' + containerId).innerHTML = `<div class="filepill">📎 ${esc(filename)}</div>`;
+}
+
+/* =====================================================================
+   PASO 1 — CIRCULAR (PDF)
+   ===================================================================== */
+async function extractPdfLines(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  const lines = [];
+  for(let p = 1; p <= pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const rows = {}; // y redondeado -> [{x,str,width,height}]
+    content.items.forEach(it => {
+      // bucket de 3pt (antes 2): con 2pt, filas donde el nombre de versión y el
+      // % quedaban a 3-4pt de diferencia de línea base se partían en dos "líneas"
+      // distintas y se perdía la mitad de las filas de la tabla Retail.
+      const y = Math.round(it.transform[5] / 3) * 3;
+      (rows[y] = rows[y] || []).push({x: it.transform[4], str: it.str, width: it.width, height: it.height});
+    });
+    const ys = Object.keys(rows).map(Number).sort((a,b) => b - a);
+    ys.forEach(y => {
+      const items = rows[y].sort((a,b) => a.x - b.x);
+      // antes: items.map(o => o.str).join(' ') — unir todo con un espacio fijo
+      // rompía palabras que el PDF trae partidas en varios fragmentos de texto
+      // (kerning): "WHOLESALE" -> "W H OLESALE", "INCENTIVOS" -> "INCENTIVO S".
+      // Eso hacía fallar el regex que busca el encabezado de la tabla Wholesale
+      // y todas las filas terminaban cayendo en la tabla Retail.
+      let line = '';
+      let prevEnd = null;
+      items.forEach(o => {
+        if(prevEnd !== null){
+          const gap = o.x - prevEnd;
+          // solo insertamos espacio si el hueco es "real" (> ~28% de la altura de fuente);
+          // un hueco más chico es kerning entre runs de texto de UNA MISMA palabra
+          if(gap > (o.height || 8) * 0.28) line += ' ';
+        }
+        line += o.str;
+        prevEnd = o.x + (o.width || 0);
+      });
+      line = line.replace(/\s+/g,' ').trim();
+      if(line) lines.push(line);
+    });
+    lines.push('');
+  }
+  return lines;
+}
+
+// exige que el número esté "aislado" (precedido por inicio de línea o espacio)
+// para no pegar, ej., el "4" de "4x4" con el "%" de la columna siguiente.
+function parsePct(str){
+  const m = String(str).match(/(?:^|\s)(\d{1,3}(?:[.,]\d{1,2})?)\s*%/);
+  if(!m) return null;
+  return parseFloat(m[1].replace(',', '.')) / 100;
+}
+function parseIntLoose(str){
+  const m = String(str).match(/\d[\d.,]*/);
+  if(!m) return null;
+  const n = parseInt(m[0].replace(/[.,]/g, ''), 10);
+  return isNaN(n) ? null : n;
+}
+
+function parseCircular(lines){
+  const text = lines.join('\n');
+  const out = {objetivoRetail:null, objetivoWholesale:null, monto2d:819000, mercadoReferencia:null, retailBonus:[], wholesaleBonus:[]};
+
+  // arranca en k=1: la propia línea del label puede traer un año ("Agosto 2026")
+  // que no queremos confundir con el valor buscado.
+  const findValueNear = (labelRe, within=3) => {
+    for(let i = 0; i < lines.length; i++){
+      if(labelRe.test(lines[i])){
+        for(let k = 1; k <= within; k++){
+          const cand = lines[i+k];
+          if(cand === undefined) continue;
+          const m = cand.match(/^(\d{1,4})$/) || cand.match(/(\d{1,4})/);
+          if(m) return parseInt(m[1], 10);
+        }
+      }
+    }
+    return null;
+  };
+  out.objetivoRetail = findValueNear(/OBJETIVO\s+RETAIL\s+GRAL/i);
+  out.objetivoWholesale = findValueNear(/OBJETIVO\s+WHOLESALE/i);
+
+  const montoM = text.match(/monto\s+fijo\s+de\s*\$\s*([\d.,]+)/i) || text.match(/\$\s*([\d.,]{5,})\s*\(IVA\s*incluido\)/i);
+  if(montoM) out.monto2d = parseIntLoose(montoM[1]);
+
+  const mercadoM = text.match(/mercado\s+de\s+referencia\s+de\s+([\d.,]+)\s*unidades/i);
+  if(mercadoM) out.mercadoReferencia = parseIntLoose(mercadoM[1]);
+
+  // ---- tablas: buscamos bloques entre encabezados ----
+  const idxRetailStart = lines.findIndex(l => /INCENTIVO\s+RETAIL/i.test(l));
+  const idxWholesaleStart = lines.findIndex(l => /INCENTIVO\s+WHOLESALE/i.test(l));
+  const idxAfterWholesale = lines.findIndex((l, i) => i > idxWholesaleStart && idxWholesaleStart >= 0 &&
+    /^2[c-f]\.|INCENTIVOS?\s+STOCK|CLAUSULA|PAGO\s+CONTADO|^3\./i.test(l));
+
+  const parseTableBlock = (start, end) => {
+    if(start < 0) return [];
+    const block = lines.slice(start, end > start ? end : lines.length);
+    const rows = [];
+    block.forEach(line => {
+      if(/^VERSI[OÓ]N/i.test(line)) return;
+      const p = parsePct(line);
+      if(p === null) return;
+      let name = line.replace(/(\d{1,3}(?:[.,]\d{1,2})?)\s*%.*$/, '').trim();
+      name = name.replace(/\s{2,}/g,' ');
+      if(name.length < 3) return;
+      rows.push({id: uid(), version: name, pct: p});
+    });
+    return rows;
+  };
+  out.retailBonus = parseTableBlock(idxRetailStart, idxWholesaleStart);
+  out.wholesaleBonus = parseTableBlock(idxWholesaleStart, idxAfterWholesale);
+
+  return out;
+}
+
+function renderBonusTable(tblId, rowsKey){
+  const tbody = $('#' + tblId + ' tbody');
+  const rows = STATE.circular[rowsKey];
+  tbody.innerHTML = rows.map(r => `
+    <tr data-id="${r.id}">
+      <td><input type="text" class="v-version" value="${esc(r.version)}"></td>
+      <td class="num"><input type="number" step="0.1" class="v-pct" style="text-align:right" value="${(r.pct*100).toFixed(2).replace(/\.00$/,'')}"></td>
+      <td><button class="rowbtn" data-del>✕</button></td>
+    </tr>`).join('') || `<tr><td colspan="3" style="color:var(--ink-soft);text-align:center;padding:16px;">Sin filas. Agregá manualmente o revisá el PDF.</td></tr>`;
+
+  $$('#' + tblId + ' .v-version').forEach((inp, i) => inp.addEventListener('input', () => { rows[i].version = inp.value; checkCircularReady(); }));
+  $$('#' + tblId + ' .v-pct').forEach((inp, i) => inp.addEventListener('input', () => { rows[i].pct = (parseFloat(inp.value) || 0) / 100; checkCircularReady(); }));
+  $$('#' + tblId + ' [data-del]').forEach(btn => btn.addEventListener('click', (e) => {
+    const id = e.target.closest('tr').dataset.id;
+    STATE.circular[rowsKey] = STATE.circular[rowsKey].filter(r => r.id !== id);
+    renderBonusTable(tblId, rowsKey);
+    checkCircularReady();
+  }));
+}
+
+function checkCircularReady(){
+  const c = STATE.circular;
+  const ok = c.objetivoRetail > 0 && c.objetivoWholesale >= 0 && c.retailBonus.length > 0 && c.wholesaleBonus.length > 0;
+  $('#btn-circular-next').disabled = !ok;
+}
+
+async function handleCircularFile(file){
+  STATE.circular.fileName = file.name;
+  showPill('circular-filepill', file.name);
+  $('#circular-status').innerHTML = `<div class="loading"><div class="spin"></div> Leyendo PDF…</div>`;
+  try{
+    const lines = await extractPdfLines(file);
+    STATE.circular.rawText = lines.join('\n');
+    const parsed = parseCircular(lines);
+    Object.assign(STATE.circular, parsed);
+
+    $('#circular-status').innerHTML = (parsed.retailBonus.length && parsed.objetivoRetail)
+      ? `<div class="callout info"><span class="ic">✓</span> Se leyeron ${parsed.retailBonus.length} versiones con bonus Retail y ${parsed.wholesaleBonus.length} con bonus Wholesale. Revisá que esté todo correcto antes de continuar.</div>`
+      : `<div class="callout warn"><span class="ic">⚠</span> No pudimos leer todo automáticamente. Completá o corregí los campos y tablas de abajo a mano (podés guiarte con el texto extraído, al final de la página).</div>`;
+
+    $('#inp-terminal').value = STATE.terminal;
+    $('#inp-objRetail').value = STATE.circular.objetivoRetail ?? '';
+    $('#inp-objWholesale').value = STATE.circular.objetivoWholesale ?? '';
+    $('#inp-monto2d').value = STATE.circular.monto2d ?? '';
+    $('#circular-rawtext').textContent = STATE.circular.rawText;
+    renderBonusTable('tbl-retailBonus', 'retailBonus');
+    renderBonusTable('tbl-wholesaleBonus', 'wholesaleBonus');
+    $('#circular-form').style.display = 'block';
+    checkCircularReady();
+  }catch(err){
+    console.error(err);
+    $('#circular-status').innerHTML = `<div class="callout error"><span class="ic">✕</span> No se pudo leer el PDF (${esc(err.message||err)}). Podés completar los campos manualmente.</div>`;
+    $('#circular-form').style.display = 'block';
+    renderBonusTable('tbl-retailBonus', 'retailBonus');
+    renderBonusTable('tbl-wholesaleBonus', 'wholesaleBonus');
+    checkCircularReady();
+  }
+}
+
+function initStep1(){
+  wireDropzone('drop-circular', 'file-circular', handleCircularFile);
+  ['inp-objRetail','inp-objWholesale','inp-monto2d'].forEach(id => {
+    $('#' + id).addEventListener('input', () => {
+      STATE.circular.objetivoRetail = parseInt($('#inp-objRetail').value, 10) || null;
+      STATE.circular.objetivoWholesale = parseInt($('#inp-objWholesale').value, 10) || 0;
+      STATE.circular.monto2d = parseFloat($('#inp-monto2d').value) || 0;
+      checkCircularReady();
+    });
+  });
+  $('#inp-terminal').addEventListener('input', () => STATE.terminal = $('#inp-terminal').value);
+  if(!STATE.periodo){
+    const now = new Date();
+    STATE.periodo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+  $('#inp-periodo').value = STATE.periodo;
+  $('#inp-periodo').addEventListener('input', () => STATE.periodo = $('#inp-periodo').value.trim());
+  $$('[data-add]').forEach(btn => btn.addEventListener('click', () => {
+    const key = btn.dataset.add;
+    STATE.circular[key].push({id: uid(), version:'', pct:0});
+    renderBonusTable(key === 'retailBonus' ? 'tbl-retailBonus' : 'tbl-wholesaleBonus', key);
+    checkCircularReady();
+  }));
+  $('#btn-circular-next').addEventListener('click', unlockNext);
+}
+function renderCircularStep(){
+  const c = STATE.circular;
+  if(!c.retailBonus.length && !c.wholesaleBonus.length && !c.objetivoRetail) return; // nada para mostrar todavía
+  $('#circular-form').style.display = 'block';
+  $('#inp-terminal').value = STATE.terminal;
+  $('#inp-periodo').value = STATE.periodo;
+  $('#inp-objRetail').value = c.objetivoRetail ?? '';
+  $('#inp-objWholesale').value = c.objetivoWholesale ?? '';
+  $('#inp-monto2d').value = c.monto2d ?? '';
+  $('#circular-rawtext').textContent = c.rawText || '(no disponible: esta carga vino de una carga guardada del portal, no de un PDF en esta sesión)';
+  renderBonusTable('tbl-retailBonus', 'retailBonus');
+  renderBonusTable('tbl-wholesaleBonus', 'wholesaleBonus');
+  if(!c.fileName && !$('#circular-status').innerHTML){
+    $('#circular-status').innerHTML = `<div class="callout info">☁ Estos datos vienen de una carga guardada del portal. Si necesitás cambiar la circular, subí el PDF de nuevo (arriba) — eso la reemplaza.</div>`;
+  }
+  checkCircularReady();
+}
+RENDERERS.circular = renderCircularStep;
+
+/* =====================================================================
+   EXCEL genérico (SheetJS)
+   ===================================================================== */
+function parseNumberLoose(v){
+  if(typeof v === 'number') return v;
+  if(v === null || v === undefined) return null;
+  let s = String(v).trim();
+  if(!s) return null;
+  s = s.replace(/[^\d.,\-]/g, '');
+  if(!s) return null;
+  if(s.includes('.') && s.includes(',')){
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if(s.includes(',') && !s.includes('.')){
+    s = s.replace(',', '.');
+  } else if((s.match(/\./g) || []).length > 1){
+    s = s.replace(/\./g, '');
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+function colLetter(i){
+  let s = '';
+  i++;
+  while(i > 0){ const r = (i - 1) % 26; s = String.fromCharCode(65 + r) + s; i = Math.floor((i - 1) / 26); }
+  return s;
+}
+async function readWorkbook(file){
+  const buf = await file.arrayBuffer();
+  return XLSX.read(buf, {type:'array', cellDates:true});
+}
+function sheetToRows(wb, sheetName){
+  const ws = wb.Sheets[sheetName];
+  return XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:''});
+}
+function sampleForColumn(rows, colIdx, maxRows=25){
+  for(let i = 0; i < Math.min(maxRows, rows.length); i++){
+    const v = rows[i] && rows[i][colIdx];
+    if(v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+function populateColumnSelect(selectEl, rows, {optional=false}={}){
+  let maxCols = 0;
+  rows.slice(0, 40).forEach(r => { if(r.length > maxCols) maxCols = r.length; });
+  const opts = [];
+  if(optional) opts.push(`<option value="-1">— no usar —</option>`);
+  for(let c = 0; c < maxCols; c++){
+    const sample = sampleForColumn(rows, c);
+    opts.push(`<option value="${c}">${colLetter(c)}${sample ? ' — ' + esc(sample.slice(0,28)) : ''}</option>`);
+  }
+  selectEl.innerHTML = opts.join('');
+}
+const HEADER_WORDS = ['modelo','version','versión','codigo','código','precio','patente','vin','fecha','cliente','tipo','preventa','sistema'];
+function looksLikeHeader(v){
+  return HEADER_WORDS.includes(String(v).trim().toLowerCase());
+}
+
+/* =====================================================================
+   PASO 2 — LISTA DE PRECIOS
+   ===================================================================== */
+// Vehículos "comerciales" (utilitarios/pickups) de Fiat: IVA 10,5%. El resto
+// (autos de pasajeros: Mobi, Argo, Cronos, Pulse, Fastback, 600) es 21%.
+// Se puede corregir por versión desde la columna "Tipo" de la vista previa.
+const VEHICULO_COMERCIAL_RE = /\b(FIORINO|STRADA|TORO|TITANO)\b/i;
+function tipoVehiculoPorNombre(modelo){
+  return VEHICULO_COMERCIAL_RE.test(modelo) ? 'comercial' : 'auto';
+}
+function ivaDivisorPorTipo(tipo){
+  return tipo === 'comercial' ? 1.105 : 1.21;
+}
+function rebuildPreciosRows(){
+  const P = STATE.precios;
+  if(P.colModelo === null || P.colPrecio === null) {
+    // Si no hay Excel cargado en esta sesión (ej. vinimos de una carga guardada
+    // del portal), no pisamos las filas ya calculadas.
+    if(!P.rawRows || !P.rawRows.length) return;
+    P.rows = [];
+    return;
+  }
+  const rows = [];
+  P.rawRows.forEach(r => {
+    const modelo = r[P.colModelo];
+    const precioRaw = r[P.colPrecio];
+    if(modelo === undefined || String(modelo).trim() === '') return;
+    if(looksLikeHeader(modelo)) return;
+    const precioNum = parseNumberLoose(precioRaw);
+    if(precioNum === null || precioNum <= 0) return;
+    const codigo = (P.colCodigo !== null && P.colCodigo >= 0) ? String(r[P.colCodigo] ?? '').trim() : '';
+    const modeloStr = String(modelo).trim();
+    const tipo = P.precioTipoOverrides[modeloStr.toUpperCase()] || tipoVehiculoPorNombre(modeloStr);
+    const divisor = P.ivaMode === 'neto' ? ivaDivisorPorTipo(tipo) : 1;
+    rows.push({codigo, modelo: modeloStr, precio: precioNum / divisor, tipo});
+  });
+  P.rows = rows;
+}
+function renderPreciosPreview(){
+  rebuildPreciosRows();
+  const P = STATE.precios;
+  if((P.rows.length || (P.rawRows && P.rawRows.length)) && $('#precios-form').style.display === 'none'){
+    $('#precios-form').style.display = 'block';
+  }
+  if(P.rows.length && !(P.rawRows && P.rawRows.length) && !$('#precios-restored-note')){
+    $('#precios-form').insertAdjacentHTML('afterbegin', `<div class="callout info" id="precios-restored-note">☁ Esta lista viene de una carga guardada del portal. Si necesitás cambiar precios, subí el Excel de nuevo (arriba) — eso la reemplaza.</div>`);
+  }
+  $('#precios-iva-help').style.display = P.ivaMode === 'neto' ? 'block' : 'none';
+  $('#precios-count').textContent = P.rows.length ? `— ${P.rows.length} versiones detectadas` : '';
+  const tbody = $('#tbl-precios tbody');
+  tbody.innerHTML = P.rows.slice(0, 300).map(r => `
+    <tr>
+      <td>${esc(r.codigo || '—')}</td>
+      <td>${esc(r.modelo)}</td>
+      <td>${P.ivaMode === 'neto' ? `
+        <select class="tipo-sel" data-modelo="${esc(r.modelo)}" style="font-size:12.5px;">
+          <option value="auto" ${r.tipo === 'auto' ? 'selected' : ''}>Auto (21%)</option>
+          <option value="comercial" ${r.tipo === 'comercial' ? 'selected' : ''}>Comercial (10,5%)</option>
+        </select>` : '—'}</td>
+      <td class="num">${money(r.precio)}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="4" style="text-align:center;color:var(--ink-soft);padding:16px;">Elegí las columnas de Modelo y Precio arriba.</td></tr>`;
+  $('#btn-precios-next').disabled = P.rows.length === 0;
+}
+async function handlePreciosFile(file){
+  STATE.precios.fileName = file.name;
+  showPill('precios-filepill', file.name);
+  try{
+    const wb = await readWorkbook(file);
+    if(!wb.SheetNames.length) throw new Error('El archivo no tiene hojas legibles');
+    STATE.precios.sheetNames = wb.SheetNames;
+    $('#sel-precios-sheet').innerHTML = wb.SheetNames.map(n => `<option>${esc(n)}</option>`).join('');
+    STATE.precios._wb = wb;
+    loadPreciosSheet(wb.SheetNames[0]);
+    $('#precios-form').style.display = 'block';
+  }catch(err){
+    console.error(err);
+    $('#precios-filepill').insertAdjacentHTML('afterend', `<div class="callout error" style="margin-top:10px;"><span class="ic">✕</span> No pudimos leer este Excel (${esc(err.message || err)}). Probá exportarlo de nuevo como .xlsx.</div>`);
+  }
+}
+function loadPreciosSheet(sheetName){
+  const P = STATE.precios;
+  P.sheetName = sheetName;
+  P.rawRows = sheetToRows(P._wb, sheetName);
+  populateColumnSelect($('#sel-precios-codigo'), P.rawRows, {optional:true});
+  populateColumnSelect($('#sel-precios-modelo'), P.rawRows);
+  populateColumnSelect($('#sel-precios-precio'), P.rawRows);
+  // autodetección simple por texto de encabezado
+  const headerRowIdx = P.rawRows.findIndex(r => r.some(c => /modelo|versi/i.test(String(c))) && r.some(c => /precio/i.test(String(c))));
+  if(headerRowIdx >= 0){
+    const hr = P.rawRows[headerRowIdx];
+    hr.forEach((cell, i) => {
+      const s = String(cell).toLowerCase();
+      if(/c[oó]digo/.test(s)) $('#sel-precios-codigo').value = i;
+      else if(/modelo|versi/.test(s)) $('#sel-precios-modelo').value = i;
+      else if(/precio.*sin|sin.*iva|p\.?c\.?\s*sin/.test(s)) $('#sel-precios-precio').value = i;
+      else if(/precio/.test(s) && $('#sel-precios-precio').value === '') $('#sel-precios-precio').value = i;
+    });
+  }
+  P.colCodigo = $('#sel-precios-codigo').value !== '' ? Number($('#sel-precios-codigo').value) : null;
+  P.colModelo = $('#sel-precios-modelo').value !== '' ? Number($('#sel-precios-modelo').value) : null;
+  P.colPrecio = $('#sel-precios-precio').value !== '' ? Number($('#sel-precios-precio').value) : null;
+  renderPreciosPreview();
+}
+function initStep2(){
+  wireDropzone('drop-precios', 'file-precios', handlePreciosFile);
+  $('#sel-precios-sheet').addEventListener('change', (e) => loadPreciosSheet(e.target.value));
+  $('#sel-precios-iva').addEventListener('change', (e) => { STATE.precios.ivaMode = e.target.value; renderPreciosPreview(); });
+  $('#tbl-precios tbody').addEventListener('change', (e) => {
+    if(!e.target.classList.contains('tipo-sel')) return;
+    const modelo = e.target.getAttribute('data-modelo') || '';
+    STATE.precios.precioTipoOverrides[modelo.toUpperCase()] = e.target.value;
+    renderPreciosPreview();
+  });
+  ['codigo','modelo','precio'].forEach(k => {
+    $('#sel-precios-' + k).addEventListener('change', (e) => {
+      STATE.precios['col' + k[0].toUpperCase() + k.slice(1)] = e.target.value === '-1' || e.target.value === '' ? null : Number(e.target.value);
+      renderPreciosPreview();
+    });
+  });
+  $('#btn-precios-next').addEventListener('click', unlockNext);
+}
+RENDERERS.precios = renderPreciosPreview;
+
+/* =====================================================================
+   PASO 3 — PATENTAMIENTOS
+   ===================================================================== */
+function rebuildPatRows(){
+  const T = STATE.patentamientos;
+  if(T.colModelo === null){
+    // Idem precios: si no hay Excel cargado en esta sesión, no pisar filas restauradas.
+    if(!T.rawRows || !T.rawRows.length) return;
+    T.rows = [];
+    return;
+  }
+  const rows = [];
+  T.rawRows.forEach(r => {
+    const modelo = r[T.colModelo];
+    if(modelo === undefined || String(modelo).trim() === '') return;
+    if(looksLikeHeader(modelo)) return;
+    rows.push({
+      modelo: String(modelo).trim(),
+      patente: T.colPatente >= 0 ? String(r[T.colPatente] ?? '').trim() : '',
+      vin: T.colVin >= 0 ? String(r[T.colVin] ?? '').trim() : '',
+      fecha: T.colFecha >= 0 ? r[T.colFecha] : '',
+      tipo: T.colTipo >= 0 ? String(r[T.colTipo] ?? '').trim() : '',
+    });
+  });
+  T.rows = rows;
+}
+function renderPatPreview(){
+  rebuildPatRows();
+  const T = STATE.patentamientos;
+  if((T.rows.length || (T.rawRows && T.rawRows.length)) && $('#pat-form').style.display === 'none'){
+    $('#pat-form').style.display = 'block';
+  }
+  if(T.rows.length && !(T.rawRows && T.rawRows.length) && !$('#pat-restored-note')){
+    $('#pat-form').insertAdjacentHTML('afterbegin', `<div class="callout info" id="pat-restored-note">☁ Esta base viene de una carga guardada del portal. Si necesitás cambiar patentamientos, subí el Excel de nuevo (arriba) — eso la reemplaza.</div>`);
+  }
+  $('#pat-count').textContent = T.rows.length ? `— ${T.rows.length} unidades detectadas` : '';
+  const cols = [['patente','Patente'],['modelo','Modelo'],['vin','VIN'],['fecha','Fecha'],['tipo','Tipo venta']]
+    .filter(([k]) => k === 'modelo' || (T.rows.length && T.rows.some(r => r[k])));
+  $('#tbl-pat thead').innerHTML = '<tr>' + cols.map(([,l]) => `<th>${l}</th>`).join('') + '</tr>';
+  $('#tbl-pat tbody').innerHTML = T.rows.slice(0, 300).map(r => '<tr>' + cols.map(([k]) => {
+    let v = r[k];
+    if(k === 'fecha' && v instanceof Date) v = v.toLocaleDateString('es-AR');
+    return `<td>${esc(v || '—')}</td>`;
+  }).join('') + '</tr>').join('') || `<tr><td style="text-align:center;color:var(--ink-soft);padding:16px;">Elegí la columna de Modelo arriba.</td></tr>`;
+  $('#btn-pat-next').disabled = T.rows.length === 0;
+}
+async function handlePatFile(file){
+  STATE.patentamientos.fileName = file.name;
+  showPill('pat-filepill', file.name);
+  try{
+    const wb = await readWorkbook(file);
+    if(!wb.SheetNames.length) throw new Error('El archivo no tiene hojas legibles');
+    $('#sel-pat-sheet').innerHTML = wb.SheetNames.map(n => `<option>${esc(n)}</option>`).join('');
+    STATE.patentamientos._wb = wb;
+    loadPatSheet(wb.SheetNames[0]);
+    $('#pat-form').style.display = 'block';
+  }catch(err){
+    console.error(err);
+    $('#pat-filepill').insertAdjacentHTML('afterend', `<div class="callout error" style="margin-top:10px;"><span class="ic">✕</span> No pudimos leer este Excel (${esc(err.message || err)}). Probá exportarlo de nuevo como .xlsx.</div>`);
+  }
+}
+function loadPatSheet(sheetName){
+  const T = STATE.patentamientos;
+  T.sheetName = sheetName;
+  T.rawRows = sheetToRows(T._wb, sheetName);
+  populateColumnSelect($('#sel-pat-modelo'), T.rawRows);
+  populateColumnSelect($('#sel-pat-patente'), T.rawRows, {optional:true});
+  populateColumnSelect($('#sel-pat-vin'), T.rawRows, {optional:true});
+  populateColumnSelect($('#sel-pat-fecha'), T.rawRows, {optional:true});
+  populateColumnSelect($('#sel-pat-tipo'), T.rawRows, {optional:true});
+  const headerRowIdx = T.rawRows.findIndex(r => r.some(c => /modelo/i.test(String(c))));
+  if(headerRowIdx >= 0){
+    T.rawRows[headerRowIdx].forEach((cell, i) => {
+      const s = String(cell).toLowerCase();
+      if(/^modelo/.test(s)) $('#sel-pat-modelo').value = i;
+      else if(/patente/.test(s)) $('#sel-pat-patente').value = i;
+      else if(/^vin/.test(s)) $('#sel-pat-vin').value = i;
+      else if(/fecha/.test(s)) $('#sel-pat-fecha').value = i;
+      else if(/tipo/.test(s)) $('#sel-pat-tipo').value = i;
+    });
+  }
+  T.colModelo = $('#sel-pat-modelo').value !== '' ? Number($('#sel-pat-modelo').value) : null;
+  T.colPatente = $('#sel-pat-patente').value !== '' ? Number($('#sel-pat-patente').value) : -1;
+  T.colVin = $('#sel-pat-vin').value !== '' ? Number($('#sel-pat-vin').value) : -1;
+  T.colFecha = $('#sel-pat-fecha').value !== '' ? Number($('#sel-pat-fecha').value) : -1;
+  T.colTipo = $('#sel-pat-tipo').value !== '' ? Number($('#sel-pat-tipo').value) : -1;
+  renderPatPreview();
+}
+function initStep3(){
+  wireDropzone('drop-pat', 'file-pat', handlePatFile);
+  $('#sel-pat-sheet').addEventListener('change', (e) => loadPatSheet(e.target.value));
+  ['modelo','patente','vin','fecha','tipo'].forEach(k => {
+    $('#sel-pat-' + k).addEventListener('change', (e) => {
+      const key = 'col' + k[0].toUpperCase() + k.slice(1);
+      STATE.patentamientos[key] = e.target.value === '-1' ? -1 : Number(e.target.value);
+      renderPatPreview();
+    });
+  });
+  $('#btn-pat-next').addEventListener('click', unlockNext);
+}
+RENDERERS.patentamientos = renderPatPreview;
+
+/* =====================================================================
+   PASO 4 — EMPAREJAR MODELOS
+   ===================================================================== */
+function uniqueModelGroups(){
+  const map = new Map();
+  STATE.patentamientos.rows.forEach(r => {
+    if(!map.has(r.modelo)) map.set(r.modelo, {modelo:r.modelo, count:0, vin:''});
+    const g = map.get(r.modelo);
+    g.count++;
+    if(!g.vin && r.vin) g.vin = r.vin;
+  });
+  return Array.from(map.values()).sort((a,b) => b.count - a.count);
+}
+function buildAutoMatches(){
+  const groups = uniqueModelGroups();
+  const precios = STATE.precios.rows;
+  const rb = STATE.circular.retailBonus, wb = STATE.circular.wholesaleBonus;
+  groups.forEach(g => {
+    if(STATE.matches[g.modelo]) return; // no pisar ediciones manuales ya hechas
+    let precioIdx = null, precioScore = 0, viaVin = false;
+    const vm = vinMatch(g.vin, precios);
+    if(vm){ precioIdx = precios.indexOf(vm); precioScore = 1; viaVin = true; }
+    else if(precios.length){
+      let best = -1, bestScore = 0;
+      precios.forEach((p, i) => {
+        const s = Math.max(scoreMatch(g.modelo, p.modelo), p.codigo ? scoreMatch(g.modelo, p.codigo) : 0);
+        if(s > bestScore){ bestScore = s; best = i; }
+      });
+      precioIdx = best >= 0 ? best : null; precioScore = bestScore;
+    }
+    const bestOf = (list) => {
+      let best = -1, bestScore = 0;
+      list.forEach((it, i) => { const s = scoreMatch(g.modelo, it.version); if(s > bestScore){ bestScore = s; best = i; } });
+      return {idx: best, score: bestScore};
+    };
+    const rMatch = bestOf(rb), wMatch = bestOf(wb);
+    STATE.matches[g.modelo] = {
+      precioIdx, precioScore, viaVin,
+      retailIdx: rMatch.score >= 0.32 ? rMatch.idx : 'none', retailScore: rMatch.score,
+      wholesaleIdx: wMatch.score >= 0.32 ? wMatch.idx : 'none', wholesaleScore: wMatch.score,
+      manualPrecio: null, manualRetailPct: null, manualWholesalePct: null,
+    };
+  });
+}
+function badgeFor(score, viaVin){
+  if(viaVin) return `<span class="badge vin">VIN ✓</span>`;
+  const lvl = confidenceLabel(score);
+  const label = lvl === 'alto' ? 'alta' : lvl === 'medio' ? 'media' : 'baja';
+  return `<span class="badge ${lvl}">${label}</span>`;
+}
+function renderMatchStep(){
+  buildAutoMatches();
+  const groups = uniqueModelGroups();
+  const precios = STATE.precios.rows;
+  const rb = STATE.circular.retailBonus, wb = STATE.circular.wholesaleBonus;
+
+  const total = groups.reduce((s,g) => s + g.count, 0);
+  const bajos = groups.filter(g => !STATE.matches[g.modelo].viaVin && STATE.matches[g.modelo].precioScore < 0.28).length;
+  $('#match-summary').innerHTML = bajos
+    ? `<div class="callout warn"><span class="ic">⚠</span> ${bajos} de ${groups.length} modelos distintos (de ${total} unidades) tienen una coincidencia de precio poco confiable. Revisalos en la tabla — están resaltados.</div>`
+    : `<div class="callout info"><span class="ic">✓</span> ${groups.length} modelos distintos, ${total} unidades en total. Revisá rápido y continuá.</div>`;
+
+  const precioOptions = (selectedIdx) => precios.map((p,i) =>
+    `<option value="${i}" ${i===selectedIdx?'selected':''}>${esc(p.modelo)} ${p.codigo ? '('+esc(p.codigo)+')' : ''} — ${money(p.precio)}</option>`
+  ).join('') + `<option value="manual" ${selectedIdx==='manual'?'selected':''}>— ingresar precio manual —</option>`;
+
+  const bonusOptions = (list, selectedIdx) => `<option value="none" ${selectedIdx==='none'?'selected':''}>Sin bonus este mes (0%)</option>` +
+    list.map((it,i) => `<option value="${i}" ${i===selectedIdx?'selected':''}>${esc(it.version)} — ${pct(it.pct)}</option>`).join('') +
+    `<option value="manual" ${selectedIdx==='manual'?'selected':''}>— ingresar % manual —</option>`;
+
+  $('#tbl-match tbody').innerHTML = groups.map(g => {
+    const m = STATE.matches[g.modelo];
+    const precioManualRow = m.precioIdx === 'manual'
+      ? `<input type="number" class="man-precio" data-modelo="${esc(g.modelo)}" placeholder="Precio s/IVA" value="${m.manualPrecio ?? ''}" style="margin-top:6px;">` : '';
+    const retailManualRow = m.retailIdx === 'manual'
+      ? `<input type="number" step="0.1" class="man-retail" data-modelo="${esc(g.modelo)}" placeholder="%" value="${m.manualRetailPct!==null ? (m.manualRetailPct*100) : ''}" style="margin-top:6px;">` : '';
+    const wholesaleManualRow = m.wholesaleIdx === 'manual'
+      ? `<input type="number" step="0.1" class="man-wholesale" data-modelo="${esc(g.modelo)}" placeholder="%" value="${m.manualWholesalePct!==null ? (m.manualWholesalePct*100) : ''}" style="margin-top:6px;">` : '';
+    return `<tr data-modelo="${esc(g.modelo)}">
+      <td><strong style="font-size:12.5px;">${esc(g.modelo)}</strong></td>
+      <td class="num">${g.count}</td>
+      <td>
+        <select class="sel-precio" data-modelo="${esc(g.modelo)}">${precioOptions(m.precioIdx)}</select>
+        <div style="margin-top:4px;">${badgeFor(m.precioScore, m.viaVin)}</div>
+        ${precioManualRow}
+      </td>
+      <td>
+        <select class="sel-retail" data-modelo="${esc(g.modelo)}">${bonusOptions(rb, m.retailIdx)}</select>
+        <div style="margin-top:4px;">${m.retailIdx === 'none' ? '<span class="badge medio">sin bonus</span>' : m.retailIdx === 'manual' ? '' : badgeFor(m.retailScore, false)}</div>
+        ${retailManualRow}
+      </td>
+      <td>
+        <select class="sel-wholesale" data-modelo="${esc(g.modelo)}">${bonusOptions(wb, m.wholesaleIdx)}</select>
+        <div style="margin-top:4px;">${m.wholesaleIdx === 'none' ? '<span class="badge medio">sin bonus</span>' : m.wholesaleIdx === 'manual' ? '' : badgeFor(m.wholesaleScore, false)}</div>
+        ${wholesaleManualRow}
+      </td>
+    </tr>`;
+  }).join('');
+
+  $$('.sel-precio').forEach(sel => sel.addEventListener('change', () => {
+    const m = STATE.matches[sel.dataset.modelo];
+    m.precioIdx = sel.value === 'manual' ? 'manual' : Number(sel.value);
+    m.viaVin = false; m.precioScore = 1;
+    renderMatchStep();
+  }));
+  $$('.sel-retail').forEach(sel => sel.addEventListener('change', () => {
+    const m = STATE.matches[sel.dataset.modelo];
+    m.retailIdx = sel.value === 'manual' ? 'manual' : (sel.value === 'none' ? 'none' : Number(sel.value));
+    renderMatchStep();
+  }));
+  $$('.sel-wholesale').forEach(sel => sel.addEventListener('change', () => {
+    const m = STATE.matches[sel.dataset.modelo];
+    m.wholesaleIdx = sel.value === 'manual' ? 'manual' : (sel.value === 'none' ? 'none' : Number(sel.value));
+    renderMatchStep();
+  }));
+  $$('.man-precio').forEach(inp => inp.addEventListener('input', () => { STATE.matches[inp.dataset.modelo].manualPrecio = parseFloat(inp.value) || 0; }));
+  $$('.man-retail').forEach(inp => inp.addEventListener('input', () => { STATE.matches[inp.dataset.modelo].manualRetailPct = (parseFloat(inp.value) || 0) / 100; }));
+  $$('.man-wholesale').forEach(inp => inp.addEventListener('input', () => { STATE.matches[inp.dataset.modelo].manualWholesalePct = (parseFloat(inp.value) || 0) / 100; }));
+
+  // tipos de venta (si se mapeó la columna) — incluye el tipo "en blanco",
+  // que en la base suele ser venta especial / Plan de Ahorro (GR).
+  const BLANK_TIPO_KEY = '';
+  const tiposRaw = Array.from(new Set(STATE.patentamientos.rows.map(r => r.tipo)));
+  // ordenamos con el blanco primero, así no se pierde entre el resto
+  const tipos = tiposRaw.sort((a, b) => (a === BLANK_TIPO_KEY ? -1 : b === BLANK_TIPO_KEY ? 1 : a.localeCompare(b)));
+  if(tipos.length){
+    tipos.forEach(t => {
+      if(STATE.tipoOverrides[t]) return; // ya lo tocó el usuario o ya tiene default
+      // Política 5/6: Venta Directa y Plan de Ahorro no cobran NINGÚN incentivo.
+      // En la base de patentamientos esto casi siempre llega con el tipo de venta
+      // en blanco (venta especial / planes "GR"), así que lo excluimos de entrada
+      // de Retail+2d Y de Wholesale. El resto de los tipos arranca sin exclusión.
+      if(t === BLANK_TIPO_KEY) STATE.tipoOverrides[t] = {excluirRetail: true, excluirWholesale: true};
+    });
+    $('#match-tipos').innerHTML = `<div class="panel">
+      <h3>Tipos de venta detectados</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px;">
+        Según la propuesta: las unidades de <strong>Venta Directa</strong> (pto. 5) y de
+        <strong>Plan de Ahorro</strong> (pto. 6) no cobran ningún incentivo (ni 2a, ni 2b, ni 2d),
+        aunque sí cuentan para el objetivo. Las facturadas a nombre del propio Concesionario
+        (pto. 7) solo pierden 2a y 2d, pero conservan 2b. Marcá cada tipo según corresponda —
+        el que aparece "(en blanco)" suele ser justamente venta especial / plan de ahorro (GR),
+        por eso viene tildado por defecto.
+      </p>
+      ${tipos.map(t => {
+        const ov = STATE.tipoOverrides[t] || {};
+        const label = t === BLANK_TIPO_KEY ? '(en blanco) — venta especial / plan de ahorro' : t;
+        return `<div class="checkline" style="margin-bottom:10px;display:flex;flex-direction:column;gap:2px;">
+          <strong style="font-size:13px;">${esc(label)}</strong>
+          <label style="margin:0;display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" class="chk-tipo-retail" data-tipo="${esc(t)}" ${ov.excluirRetail ? 'checked' : ''}>
+            Excluir de Retail (2a) y Atado al Wholesale (2d)
+          </label>
+          <label style="margin:0;display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" class="chk-tipo-wholesale" data-tipo="${esc(t)}" ${ov.excluirWholesale ? 'checked' : ''}>
+            Excluir de Wholesale (2b)
+          </label>
+        </div>`;
+      }).join('')}
+    </div>`;
+    $$('.chk-tipo-retail').forEach(chk => chk.addEventListener('change', () => {
+      const t = chk.dataset.tipo;
+      STATE.tipoOverrides[t] = {...STATE.tipoOverrides[t], excluirRetail: chk.checked};
+    }));
+    $$('.chk-tipo-wholesale').forEach(chk => chk.addEventListener('change', () => {
+      const t = chk.dataset.tipo;
+      STATE.tipoOverrides[t] = {...STATE.tipoOverrides[t], excluirWholesale: chk.checked};
+    }));
+  } else {
+    $('#match-tipos').innerHTML = '';
+  }
+}
+function initStep4(){
+  $('#btn-match-next').addEventListener('click', unlockNext);
+}
+RENDERERS.match = renderMatchStep;
+
+/* =====================================================================
+   PASO 5 — SUPUESTOS
+   ===================================================================== */
+function renderWholesaleCumplimiento(){
+  const objWholesale = STATE.circular.objetivoWholesale || 0;
+  const el = $('#wholesale-cumpl');
+  if(!el) return;
+  if(STATE.wholesale.asumido){
+    el.innerHTML = `<div class="mcard">
+      <div class="row"><span>% Cumplimiento (asumido)</span><span class="num">100%</span></div>
+    </div>`;
+    return;
+  }
+  const unidades = STATE.wholesale.unidades || 0;
+  const p = objWholesale ? unidades / objWholesale : 0;
+  el.innerHTML = `<div class="mcard ${p < 0.8 ? 'short' : ''}">
+    <div class="row"><span>Unidades Wholesale</span><span class="num">${unidades} / ${objWholesale}</span></div>
+    <div class="row"><span>% Cumplimiento</span><span class="num">${pct(p)}</span></div>
+    <div class="bar"><div style="width:${Math.min(100,p*100)}%"></div></div>
+    ${p < 0.8 ? `<div class="callout error" style="margin-top:8px;"><span class="ic">⚠</span> Por debajo del 80% mínimo: el incentivo 2b (y el 2d, si Retail también está completo) queda en $0.</div>` : ''}
+  </div>`;
+}
+function renderSupuestosStep(){
+  const objRetail = STATE.circular.objetivoRetail || 0;
+  const retailCount = STATE.patentamientos.rows.length;
+  const p = objRetail ? retailCount / objRetail : 0;
+  $('#supuestos-retail').innerHTML = `
+    <div class="mcard ${p < 1 ? 'short' : ''}">
+      <div class="row"><span>Patentamientos cargados</span><span class="num">${retailCount} / ${objRetail}</span></div>
+      <div class="row"><span>% Cumplimiento</span><span class="num">${pct(p)}</span></div>
+      <div class="bar"><div style="width:${Math.min(100,p*100)}%"></div></div>
+    </div>`;
+  $('#inp-wholesale-objetivo').value = STATE.circular.objetivoWholesale ?? '';
+  $('#inp-wholesale-unidades').value = STATE.wholesale.unidades ?? '';
+  $('#chk-wholesale-100').checked = STATE.wholesale.asumido;
+  $('#wholesale-manual').style.display = STATE.wholesale.asumido ? 'none' : 'grid';
+  renderWholesaleCumplimiento();
+}
+function initStep5(){
+  $('#chk-wholesale-100').addEventListener('change', (e) => {
+    STATE.wholesale.asumido = e.target.checked;
+    $('#wholesale-manual').style.display = e.target.checked ? 'none' : 'grid';
+    renderWholesaleCumplimiento();
+  });
+  $('#inp-wholesale-unidades').addEventListener('input', (e) => {
+    STATE.wholesale.unidades = parseFloat(e.target.value) || 0;
+    renderWholesaleCumplimiento();
+  });
+  $('#btn-supuestos-next').addEventListener('click', unlockNext);
+}
+RENDERERS.supuestos = renderSupuestosStep;
+
+/* =====================================================================
+   PASO 6 — RESULTADO
+   ===================================================================== */
+let LAST_RESULT = null;
+function computeResults(){
+  const patRows = STATE.patentamientos.rows;
+  const objRetail = STATE.circular.objetivoRetail || 0;
+  const objWholesale = STATE.circular.objetivoWholesale || 0;
+  const retailCount = patRows.length;
+  const retailPctCumpl = objRetail ? retailCount / objRetail : 0;
+
+  let wholesaleUnidades, wholesalePctCumpl;
+  if(STATE.wholesale.asumido){ wholesalePctCumpl = 1; wholesaleUnidades = objWholesale; }
+  else { wholesaleUnidades = STATE.wholesale.unidades || 0; wholesalePctCumpl = objWholesale ? wholesaleUnidades / objWholesale : 0; }
+
+  const retailGate = retailPctCumpl >= 0.8;
+  const wholesaleGate = wholesalePctCumpl >= 0.8;
+  const elegible2d = retailPctCumpl >= 1 && wholesalePctCumpl >= 1;
+
+  let total2a = 0, total2b = 0, total2d = 0;
+  const detail = patRows.map(r => {
+    const m = STATE.matches[r.modelo] || {};
+    let precio = 0;
+    if(m.precioIdx === 'manual') precio = m.manualPrecio || 0;
+    else if(typeof m.precioIdx === 'number' && STATE.precios.rows[m.precioIdx]) precio = STATE.precios.rows[m.precioIdx].precio;
+
+    let retailPct = 0;
+    if(m.retailIdx === 'manual') retailPct = m.manualRetailPct || 0;
+    else if(typeof m.retailIdx === 'number' && STATE.circular.retailBonus[m.retailIdx]) retailPct = STATE.circular.retailBonus[m.retailIdx].pct;
+
+    let wholesalePct = 0;
+    if(m.wholesaleIdx === 'manual') wholesalePct = m.manualWholesalePct || 0;
+    else if(typeof m.wholesaleIdx === 'number' && STATE.circular.wholesaleBonus[m.wholesaleIdx]) wholesalePct = STATE.circular.wholesaleBonus[m.wholesaleIdx].pct;
+
+    const ov = STATE.tipoOverrides[r.tipo] || {};
+    const excluirRetail = !!ov.excluirRetail;
+    const excluirWholesale = !!ov.excluirWholesale;
+    const inc2a = (retailGate && !excluirRetail) ? precio * retailPct : 0;
+    const inc2b = (wholesaleGate && !excluirWholesale) ? precio * wholesalePct : 0;
+    const inc2d = (elegible2d && !excluirRetail) ? (STATE.circular.monto2d / 1.21) : 0;
+    total2a += inc2a; total2b += inc2b; total2d += inc2d;
+    return {...r, precio, retailPct, wholesalePct, inc2a, inc2b, inc2d, excluirRetail, excluirWholesale};
+  });
+
+  return {retailCount, objRetail, retailPctCumpl, wholesaleUnidades, objWholesale, wholesalePctCumpl,
+          retailGate, wholesaleGate, elegible2d, total2a, total2b, total2d, detail};
+}
+
+function renderResultadoStep(){
+  const R = computeResults();
+  LAST_RESULT = R;
+  const totalGeneral = R.total2a + R.total2b + R.total2d;
+  const title = STATE.terminal ? `${STATE.terminal} — estimación de incentivos` : 'Estimación de incentivos';
+
+  let warnings = '';
+  if(!R.retailGate) warnings += `<div class="callout error"><span class="ic">⚠</span> El cumplimiento Retail (${pct(R.retailPctCumpl)}) está por debajo del mínimo del 80%. Según la política habitual, en ese caso no correspondería incentivo 2a — el cuadro de abajo ya lo refleja en $0.</div>`;
+  if(!R.wholesaleGate) warnings += `<div class="callout error"><span class="ic">⚠</span> El cumplimiento Wholesale (${pct(R.wholesalePctCumpl)}) está por debajo del mínimo del 80%. El incentivo 2b se muestra en $0.</div>`;
+  if(STATE.wholesale.asumido) warnings += `<div class="callout warn"><span class="ic">⚠</span> El Wholesale se asumió al 100% (no hay base de facturación cargada). Volvé al Paso 5 para poner el dato real en cuanto lo tengas.</div>`;
+  const bajaConf = Object.values(STATE.matches).filter(m => !m.viaVin && m.precioIdx !== 'manual' && m.precioScore < 0.28).length;
+  if(bajaConf) warnings += `<div class="callout warn"><span class="ic">⚠</span> Hay ${bajaConf} modelo(s) con coincidencia de precio de confianza baja — revisalos en el Paso 4 antes de usar este número para decidir.</div>`;
+
+  const detailRows = R.detail.map(d => `
+    <tr>
+      <td>${esc(d.patente || '—')}</td>
+      <td>${esc(d.modelo)}</td>
+      <td class="num">${money(d.precio)}</td>
+      <td class="num">${pct(d.retailPct)}</td>
+      <td class="num">${money(d.inc2a)}</td>
+      <td class="num">${pct(d.wholesalePct)}</td>
+      <td class="num">${money(d.inc2b)}</td>
+      <td class="num">${money(d.inc2d)}</td>
+    </tr>`).join('');
+
+  $('#resultado-body').innerHTML = `
+    <div class="resulthead">
+      <div class="label">${esc(title)} · TOTAL ESTIMADO A COBRAR</div>
+      <div class="total">${money(totalGeneral)}</div>
+      <div class="sub">2a Retail + 2b Wholesale + 2d Atado · sobre precio concesionario sin IVA</div>
+    </div>
+
+    ${warnings}
+
+    <div class="breakdown">
+      <div class="bcard"><div class="k">2a · Incentivo Retail</div><div class="v">${money(R.total2a)}</div><div class="x">${R.retailGate ? 'Objetivo cumplido (≥80%)' : 'No alcanza el mínimo'}</div></div>
+      <div class="bcard"><div class="k">2b · Incentivo Wholesale</div><div class="v">${money(R.total2b)}</div><div class="x">${R.wholesaleGate ? 'Objetivo cumplido (≥80%)' : 'No alcanza el mínimo'}</div></div>
+      <div class="bcard"><div class="k">2d · Retail atado a Wholesale</div><div class="v">${money(R.total2d)}</div><div class="x">${R.elegible2d ? 'Aplica: 100% Retail y Wholesale' : 'No aplica (falta 100% en alguno)'}</div></div>
+    </div>
+
+    <div class="metrics">
+      <div class="mcard ${R.retailPctCumpl < 1 ? 'short' : ''}">
+        <div class="row"><span>Retail</span><span class="num">${R.retailCount} / ${R.objRetail} · ${pct(R.retailPctCumpl)}</span></div>
+        <div class="bar"><div style="width:${Math.min(100, R.retailPctCumpl*100)}%"></div></div>
+      </div>
+      <div class="mcard ${R.wholesalePctCumpl < 1 ? 'short' : ''}">
+        <div class="row"><span>Wholesale</span><span class="num">${num(R.wholesaleUnidades)} / ${num(R.objWholesale)} · ${pct(R.wholesalePctCumpl)}</span></div>
+        <div class="bar"><div style="width:${Math.min(100, R.wholesalePctCumpl*100)}%"></div></div>
+      </div>
+    </div>
+
+    <div class="panel" style="padding:0;">
+      <div style="padding:16px 18px 0;"><h3>Detalle por unidad</h3></div>
+      <div class="tblwrap" style="border:none; max-height:480px; overflow:auto;">
+        <table>
+          <thead><tr><th>Patente</th><th>Modelo</th><th class="num">Precio s/IVA</th><th class="num">% Retail</th><th class="num">$ Retail</th><th class="num">% Wholesale</th><th class="num">$ Wholesale</th><th class="num">$ 2d</th></tr></thead>
+          <tbody>${detailRows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function exportCSV(){
+  if(!LAST_RESULT) return;
+  const rows = [['Patente','Modelo','Precio s/IVA','% Retail','$ Retail (2a)','% Wholesale','$ Wholesale (2b)','$ Atado (2d)']];
+  LAST_RESULT.detail.forEach(d => rows.push([d.patente, d.modelo, Math.round(d.precio), (d.retailPct*100).toFixed(2)+'%', Math.round(d.inc2a), (d.wholesalePct*100).toFixed(2)+'%', Math.round(d.inc2b), Math.round(d.inc2d)]));
+  rows.push([]);
+  rows.push(['TOTAL 2a', '', '', '', Math.round(LAST_RESULT.total2a)]);
+  rows.push(['TOTAL 2b', '', '', '', '', '', Math.round(LAST_RESULT.total2b)]);
+  rows.push(['TOTAL 2d', '', '', '', '', '', '', Math.round(LAST_RESULT.total2d)]);
+  rows.push(['TOTAL GENERAL', '', '', '', '', '', '', Math.round(LAST_RESULT.total2a+LAST_RESULT.total2b+LAST_RESULT.total2d)]);
+  const name = (STATE.terminal || 'incentivos').replace(/[^a-z0-9]+/gi,'_');
+  downloadCSV(`incentivos_${name}.csv`, rows);
+}
+/* =====================================================================
+   PORTAL — guardar / cargar / repositorio (Netlify Blobs)
+   Nada de esto reemplaza el "todo se procesa en tu navegador" de los
+   pasos 1-5: sólo el Paso 6, cuando el usuario aprieta "Guardar en el
+   portal", sube un resumen del resultado a una función de Netlify.
+   ===================================================================== */
+const MARCA = 'fiat';
+
+function snapshotState(){
+  return {
+    terminal: STATE.terminal,
+    periodo: STATE.periodo,
+    circular: {
+      objetivoRetail: STATE.circular.objetivoRetail,
+      objetivoWholesale: STATE.circular.objetivoWholesale,
+      monto2d: STATE.circular.monto2d,
+      mercadoReferencia: STATE.circular.mercadoReferencia,
+      retailBonus: STATE.circular.retailBonus,
+      wholesaleBonus: STATE.circular.wholesaleBonus,
+    },
+    precios: { rows: STATE.precios.rows },
+    patentamientos: { rows: STATE.patentamientos.rows },
+    matches: STATE.matches,
+    tipoOverrides: STATE.tipoOverrides,
+    wholesale: STATE.wholesale,
+  };
+}
+function restoreState(snap){
+  if(!snap) return;
+  STATE.terminal = snap.terminal || STATE.terminal;
+  STATE.periodo = snap.periodo || STATE.periodo;
+  Object.assign(STATE.circular, snap.circular || {});
+  STATE.precios.rows = (snap.precios && snap.precios.rows) || [];
+  STATE.patentamientos.rows = (snap.patentamientos && snap.patentamientos.rows) || [];
+  STATE.matches = snap.matches || {};
+  STATE.tipoOverrides = snap.tipoOverrides || {};
+  STATE.wholesale = snap.wholesale || STATE.wholesale;
+}
+
+async function guardarEnPortal(){
+  const btn = $('#btn-guardar-portal');
+  const status = $('#guardar-status');
+  if(!STATE.periodo){ alert('Falta el Período (Paso 1) — sin eso no se puede guardar como carga mensual.'); return; }
+  btn.disabled = true;
+  status.textContent = 'Guardando…';
+  status.style.color = 'var(--ink-soft)';
+  try{
+    const res = await fetch('/.netlify/functions/guardar', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ marca: MARCA, periodo: STATE.periodo, state: snapshotState() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    status.textContent = '✓ Guardado — este link ya muestra esta carga para cualquiera que lo abra.';
+    status.style.color = '#1a7f37';
+    STATE._cargadoDesdePortal = true;
+    STATE._cargadoDesdeFecha = new Date().toISOString();
+    renderCargaBanner();
+    renderRepositorio();
+  }catch(err){
+    status.textContent = `✕ No se pudo guardar: ${(err && err.message) || err}`;
+    status.style.color = '#c0392b';
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+async function cargarDesdePortal(periodo){
+  const url = `/.netlify/functions/cargar?marca=${encodeURIComponent(MARCA)}` + (periodo ? `&periodo=${encodeURIComponent(periodo)}` : '');
+  const res = await fetch(url);
+  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function listarPeriodos(){
+  try{
+    const res = await fetch(`/.netlify/functions/listar?marca=${encodeURIComponent(MARCA)}`);
+    if(!res.ok) return [];
+    const data = await res.json();
+    return (data && data.ok && data.periodos) || [];
+  }catch(err){ return []; }
+}
+
+function afterRestoreUI(){
+  if($('#inp-terminal')) $('#inp-terminal').value = STATE.terminal;
+  if($('#inp-periodo')) $('#inp-periodo').value = STATE.periodo;
+}
+
+async function renderRepositorio(){
+  const el = $('#repositorio-lista');
+  if(!el) return;
+  el.innerHTML = '<div style="font-size:12.5px;color:var(--ink-soft);">Buscando meses guardados…</div>';
+  const periodos = await listarPeriodos();
+  if(!periodos.length){ el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">Meses guardados (repositorio):</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      ${periodos.map(p => `<button class="btn btn-ghost btn-cargar-periodo" data-periodo="${esc(p)}" style="padding:6px 12px;font-size:12.5px;">${esc(p)}${p === STATE.periodo ? ' (actual)' : ''}</button>`).join('')}
+    </div>`;
+  $$('.btn-cargar-periodo').forEach(btn => btn.addEventListener('click', async () => {
+    const periodo = btn.dataset.periodo;
+    if(!confirm(`¿Cargar el período ${periodo}? Reemplaza lo que estás viendo ahora (no se pierde nada guardado).`)) return;
+    try{
+      const data = await cargarDesdePortal(periodo);
+      if(data.found){
+        restoreState(data.state);
+        STATE._cargadoDesdePortal = true;
+        STATE._cargadoDesdeFecha = data.savedAt;
+        maxUnlocked = 5;
+        afterRestoreUI();
+        renderCargaBanner();
+        goToStep(5);
+      }
+    }catch(err){ alert('No se pudo cargar ese período: ' + ((err && err.message) || err)); }
+  }));
+}
+
+function renderCargaBanner(){
+  const el = $('#carga-banner');
+  if(!el) return;
+  if(!STATE._cargadoDesdePortal){ el.innerHTML = ''; return; }
+  const fecha = STATE._cargadoDesdeFecha ? new Date(STATE._cargadoDesdeFecha).toLocaleString('es-AR') : '';
+  el.innerHTML = `<div class="callout info no-print" style="margin-bottom:16px;">
+    <span class="ic">☁</span> Estás viendo la carga guardada del portal — período <strong>${esc(STATE.periodo || '—')}</strong>${fecha ? `, guardada ${esc(fecha)}` : ''}.
+    Podés corregir cualquier paso (usando el menú de la izquierda) y volver a guardar en el Paso 6.
+  </div>`;
+}
+
+async function initPortalAutoLoad(){
+  const params = new URLSearchParams(location.search);
+  const periodoURL = params.get('periodo') || '';
+  try{
+    const data = await cargarDesdePortal(periodoURL);
+    if(data && data.found){
+      restoreState(data.state);
+      STATE._cargadoDesdePortal = true;
+      STATE._cargadoDesdeFecha = data.savedAt;
+      maxUnlocked = 5;
+      afterRestoreUI();
+      renderCargaBanner();
+      goToStep(5);
+    }
+  }catch(err){
+    console.warn('No se pudo consultar el portal (¿la función todavía no está desplegada?):', err);
+  }
+}
+
+function initStep6(){
+  $('#btn-export-csv').addEventListener('click', exportCSV);
+  $('#btn-print').addEventListener('click', () => window.print());
+  $('#btn-restart').addEventListener('click', () => { if(confirm('¿Empezar de nuevo? Se pierde todo lo cargado.')) location.reload(); });
+  $('#btn-guardar-portal').addEventListener('click', guardarEnPortal);
+  renderRepositorio();
+}
+RENDERERS.resultado = renderResultadoStep;
+
+/* =====================================================================
+   INIT
+   ===================================================================== */
+function init(){
+  renderRail();
+  $$('.step')[0].classList.add('active');
+  $$('[data-back]').forEach(btn => btn.addEventListener('click', () => goToStep(Math.max(0, currentStep - 1))));
+  $('#inp-terminal').value = STATE.terminal;
+  initStep1(); initStep2(); initStep3(); initStep4(); initStep5(); initStep6();
+  initPortalAutoLoad();
+}
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
