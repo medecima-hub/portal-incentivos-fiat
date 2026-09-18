@@ -42,32 +42,64 @@ async function blobsPut(creds, key, value) {
   }
 }
 
+async function blobsDelete(creds, key) {
+  const url = new URL(`/${creds.siteID}/${STORE}/${encodeURIComponent(key)}`, creds.edgeURL).toString();
+  const res = await fetch(url, { method: 'DELETE', headers: { authorization: `Bearer ${creds.token}` } });
+  if (!res.ok && res.status !== 404) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Netlify Blobs DELETE falló (${res.status}): ${body.slice(0, 300)}`);
+  }
+}
+
+async function handlePost(event, creds, headers) {
+  const body = JSON.parse(event.body || '{}');
+  const marca = String(body.marca || '').trim().toLowerCase();
+  const periodo = body.periodo ? String(body.periodo).trim() : '';
+  const state = body.state;
+  if (!marca || !state) {
+    return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Falta marca o state' }) };
+  }
+  const payload = { savedAt: new Date().toISOString(), periodo, state };
+  await blobsPut(creds, `${marca}--current`, payload);
+  if (periodo) {
+    await blobsPut(creds, `${marca}--${periodo}`, payload);
+    const indexKey = `${marca}--index`;
+    const existing = (await blobsGet(creds, indexKey)) || { periodos: [] };
+    const periodos = Array.isArray(existing.periodos) ? existing.periodos.slice() : [];
+    if (!periodos.includes(periodo)) periodos.push(periodo);
+    periodos.sort().reverse();
+    await blobsPut(creds, indexKey, { periodos });
+  }
+  return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
+}
+
+// Borra un período guardado (por si se cargó mal un mes y hay que sacarlo
+// del repositorio). No toca "current" — si el período borrado era el
+// último guardado, "current" queda igual hasta el próximo guardado real.
+async function handleDelete(event, creds, headers) {
+  const qs = event.queryStringParameters || {};
+  const marca = String(qs.marca || '').trim().toLowerCase();
+  const periodo = qs.periodo ? String(qs.periodo).trim() : '';
+  if (!marca || !periodo) {
+    return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Falta marca o periodo' }) };
+  }
+  await blobsDelete(creds, `${marca}--${periodo}`);
+  const indexKey = `${marca}--index`;
+  const existing = await blobsGet(creds, indexKey);
+  if (existing && Array.isArray(existing.periodos)) {
+    const periodos = existing.periodos.filter((p) => p !== periodo);
+    await blobsPut(creds, indexKey, { periodos });
+  }
+  return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
+}
+
 exports.handler = async (event) => {
   const headers = { 'content-type': 'application/json' };
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'Método no permitido' }) };
-  }
   try {
     const creds = getBlobsCreds(event);
-    const body = JSON.parse(event.body || '{}');
-    const marca = String(body.marca || '').trim().toLowerCase();
-    const periodo = body.periodo ? String(body.periodo).trim() : '';
-    const state = body.state;
-    if (!marca || !state) {
-      return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Falta marca o state' }) };
-    }
-    const payload = { savedAt: new Date().toISOString(), periodo, state };
-    await blobsPut(creds, `${marca}--current`, payload);
-    if (periodo) {
-      await blobsPut(creds, `${marca}--${periodo}`, payload);
-      const indexKey = `${marca}--index`;
-      const existing = (await blobsGet(creds, indexKey)) || { periodos: [] };
-      const periodos = Array.isArray(existing.periodos) ? existing.periodos.slice() : [];
-      if (!periodos.includes(periodo)) periodos.push(periodo);
-      periodos.sort().reverse();
-      await blobsPut(creds, indexKey, { periodos });
-    }
-    return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
+    if (event.httpMethod === 'POST') return await handlePost(event, creds, headers);
+    if (event.httpMethod === 'DELETE') return await handleDelete(event, creds, headers);
+    return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'Método no permitido' }) };
   } catch (err) {
     return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: String((err && err.message) || err) }) };
   }
