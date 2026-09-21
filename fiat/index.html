@@ -571,6 +571,54 @@ details.raw pre{
           <div id="wholesale-cumpl" style="margin-top:12px;"></div>
         </div>
 
+        <div class="panel">
+          <h3>Control de compras <span style="font-weight:400;color:var(--ink-soft);">(para cruzar con la liquidación)</span></h3>
+          <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px;">
+            Desde el <strong id="fecha-corte-label">01/06/2026</strong> el incentivo 2a (Retail) ya viene neteado
+            en la factura de compra de la unidad. Las unidades compradas <strong>antes</strong> de esa fecha lo
+            cobran recién en la liquidación del mes siguiente al patentamiento. Subí acá el Excel de compras
+            (con VIN y fecha de compra) para que el Paso 6 te divida el 2a entre "ya neteado" y "pendiente de
+            liquidación", y así puedas cruzarlo directo contra lo que te liquida la terminal.
+          </p>
+          <div class="field" style="max-width:260px;margin-bottom:14px;">
+            <label>Fecha de corte</label>
+            <input type="date" id="inp-fecha-corte-compras">
+          </div>
+          <div class="drop" id="drop-compras">
+            <input type="file" id="file-compras" accept=".xlsx,.xls">
+            <div class="icon">🧾</div>
+            <div class="main">Arrastrá el Excel de compras acá, o hacé clic para elegirlo</div>
+            <div class="sub">.xlsx o .xls — necesita columnas de VIN y fecha de compra</div>
+            <div id="compras-filepill"></div>
+          </div>
+          <div id="compras-form" style="display:none;margin-top:14px;">
+            <div class="field">
+              <label>Hoja del Excel</label>
+              <select id="sel-compras-sheet"></select>
+            </div>
+            <div class="grid3">
+              <div class="field">
+                <label>Columna: VIN <span style="color:var(--brick)">*</span></label>
+                <select id="sel-compras-vin"></select>
+              </div>
+              <div class="field">
+                <label>Columna: Fecha de compra <span style="color:var(--brick)">*</span></label>
+                <select id="sel-compras-fecha"></select>
+              </div>
+              <div class="field">
+                <label>Columna: Modelo (opcional)</label>
+                <select id="sel-compras-modelo"></select>
+              </div>
+            </div>
+            <h3 style="margin-top:16px;">Vista previa <span id="compras-count" style="font-weight:400;color:var(--ink-soft);"></span></h3>
+            <div class="tblwrap"><table id="tbl-compras">
+              <thead><tr><th>VIN</th><th>Modelo</th><th>Fecha de compra</th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+            <div id="compras-cruce"></div>
+          </div>
+        </div>
+
         <div class="actions">
           <button class="btn btn-ghost" data-back>← Atrás</button>
           <button class="btn btn-primary" id="btn-supuestos-next">Ver resultado →</button>
@@ -771,6 +819,16 @@ const STATE = {
   matches: {}, // modeloText -> {precioIdx, retailIdx, wholesaleIdx, manualPrecio, manualRetailPct, manualWholesalePct}
   tipoOverrides: {}, // tipoVenta (''=en blanco) -> {excluirRetail:bool, excluirWholesale:bool}
   wholesale: { asumido:true, unidades:null, pctManual:null },
+  compras: {
+    // Excel de compras (facturación de Stellantis al concesionario), para
+    // cruzar por VIN con los patentamientos y saber si el 2a de cada unidad
+    // ya viene neteado en la compra o se cobra en la liquidación del mes
+    // siguiente al patentamiento (política vigente desde el 01/06/2026).
+    fileName: null, sheetName: null, sheetNames: [], rawRows: [],
+    colVin: null, colFecha: null, colModelo: null,
+    rows: [], // [{vin, fecha, modelo}]
+  },
+  fechaCorteCompras: '2026-06-01', // compras DESDE esta fecha ya vienen neteadas; antes, el 2a se liquida el mes siguiente al patentamiento
 };
 
 const STEPS = [
@@ -1516,8 +1574,139 @@ function initStep4(){
 RENDERERS.match = renderMatchStep;
 
 /* =====================================================================
-   PASO 5 — SUPUESTOS
+   PASO 5 — SUPUESTOS + CONTROL DE COMPRAS
    ===================================================================== */
+function normVin(v){
+  return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+function parseFechaCompra(v){
+  if(v instanceof Date && !isNaN(v)) return v;
+  if(typeof v === 'number' && typeof XLSX !== 'undefined' && XLSX.SSF && XLSX.SSF.parse_date_code){
+    const d = XLSX.SSF.parse_date_code(v);
+    if(d) return new Date(d.y, d.m - 1, d.d);
+  }
+  if(typeof v === 'string' && v.trim()){
+    const s = v.trim();
+    let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if(m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d2 = new Date(s);
+    if(!isNaN(d2)) return d2;
+  }
+  return null;
+}
+function rebuildComprasRows(){
+  const C = STATE.compras;
+  if(C.colVin === null || C.colFecha === null){
+    // Idem precios/patentamientos: si no hay Excel cargado en esta sesión, no pisar filas restauradas.
+    if(!C.rawRows || !C.rawRows.length) return;
+    C.rows = [];
+    return;
+  }
+  const rows = [];
+  C.rawRows.forEach(r => {
+    const vin = r[C.colVin];
+    if(vin === undefined || String(vin).trim() === '') return;
+    if(looksLikeHeader(vin)) return;
+    rows.push({
+      vin: String(vin).trim(),
+      fecha: r[C.colFecha],
+      modelo: (C.colModelo !== null && C.colModelo >= 0) ? String(r[C.colModelo] ?? '').trim() : '',
+    });
+  });
+  C.rows = rows;
+}
+function comprasIndexByVin(){
+  const map = new Map();
+  STATE.compras.rows.forEach(r => {
+    const key = normVin(r.vin);
+    if(!key) return;
+    const fecha = parseFechaCompra(r.fecha);
+    if(fecha) map.set(key, fecha);
+  });
+  return map;
+}
+function renderComprasCruce(){
+  const el = $('#compras-cruce');
+  if(!el) return;
+  const patRows = STATE.patentamientos.rows;
+  if(!patRows.length || !STATE.compras.rows.length){ el.innerHTML = ''; return; }
+  const map = comprasIndexByVin();
+  let matched = 0, sinVin = 0;
+  patRows.forEach(r => {
+    const key = normVin(r.vin);
+    if(!key) sinVin++;
+    else if(map.has(key)) matched++;
+  });
+  const sinMatch = patRows.length - matched - sinVin;
+  el.innerHTML = `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:10px;">
+    Cruce con patentamientos: <strong>${matched}</strong> de ${patRows.length} unidad(es) encontraron fecha de compra por VIN
+    ${sinVin ? ` · ${sinVin} patentamiento(s) sin VIN cargado (no se pueden cruzar — completá la columna VIN en el Paso 3)` : ''}
+    ${sinMatch ? ` · ${sinMatch} VIN con patentamiento pero sin compra cargada todavía` : ''}
+  </div>`;
+}
+function renderComprasPreview(){
+  rebuildComprasRows();
+  const C = STATE.compras;
+  if((C.rows.length || (C.rawRows && C.rawRows.length)) && $('#compras-form').style.display === 'none'){
+    $('#compras-form').style.display = 'block';
+  }
+  if(C.rows.length && !(C.rawRows && C.rawRows.length) && !$('#compras-restored-note')){
+    $('#compras-form').insertAdjacentHTML('afterbegin', `<div class="callout info" id="compras-restored-note">☁ Esta base de compras viene de una carga guardada del portal. Si necesitás cambiarla, subí el Excel de nuevo (arriba) — eso la reemplaza.</div>`);
+  }
+  $('#compras-count').textContent = C.rows.length ? `— ${C.rows.length} compra(s) cargadas` : '';
+  const tbody = $('#tbl-compras tbody');
+  tbody.innerHTML = C.rows.slice(0, 300).map(r => {
+    const f = parseFechaCompra(r.fecha);
+    return `<tr>
+      <td>${esc(r.vin)}</td>
+      <td>${esc(r.modelo || '—')}</td>
+      <td>${f ? esc(f.toLocaleDateString('es-AR')) : esc(String(r.fecha || '—'))}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="3" style="text-align:center;color:var(--ink-soft);padding:16px;">Elegí las columnas de VIN y Fecha de compra arriba.</td></tr>`;
+  const corte = parseFechaCompra(STATE.fechaCorteCompras);
+  if($('#fecha-corte-label') && corte) $('#fecha-corte-label').textContent = corte.toLocaleDateString('es-AR');
+  renderComprasCruce();
+}
+async function handleComprasFile(file){
+  STATE.compras.fileName = file.name;
+  showPill('compras-filepill', file.name);
+  try{
+    const wb = await readWorkbook(file);
+    if(!wb.SheetNames.length) throw new Error('El archivo no tiene hojas legibles');
+    STATE.compras.sheetNames = wb.SheetNames;
+    $('#sel-compras-sheet').innerHTML = wb.SheetNames.map(n => `<option>${esc(n)}</option>`).join('');
+    STATE.compras._wb = wb;
+    loadComprasSheet(wb.SheetNames[0]);
+    $('#compras-form').style.display = 'block';
+  }catch(err){
+    console.error(err);
+    $('#compras-filepill').insertAdjacentHTML('afterend', `<div class="callout error" style="margin-top:10px;"><span class="ic">✕</span> No pudimos leer este Excel (${esc(err.message || err)}). Probá exportarlo de nuevo como .xlsx.</div>`);
+  }
+}
+function loadComprasSheet(sheetName){
+  const C = STATE.compras;
+  C.sheetName = sheetName;
+  C.rawRows = sheetToRows(C._wb, sheetName);
+  populateColumnSelect($('#sel-compras-vin'), C.rawRows);
+  populateColumnSelect($('#sel-compras-fecha'), C.rawRows);
+  populateColumnSelect($('#sel-compras-modelo'), C.rawRows, {optional:true});
+  const headerRowIdx = C.rawRows.findIndex(r => r.some(c => /vin|chasis|chassis/i.test(String(c))));
+  if(headerRowIdx >= 0){
+    C.rawRows[headerRowIdx].forEach((cell, i) => {
+      const s = String(cell).toLowerCase();
+      if(/vin|chasis|chassis/.test(s)) $('#sel-compras-vin').value = i;
+      else if(/fecha/.test(s)) $('#sel-compras-fecha').value = i;
+      else if(/modelo|versi/.test(s)) $('#sel-compras-modelo').value = i;
+    });
+  }
+  C.colVin = $('#sel-compras-vin').value !== '' ? Number($('#sel-compras-vin').value) : null;
+  C.colFecha = $('#sel-compras-fecha').value !== '' ? Number($('#sel-compras-fecha').value) : null;
+  const modeloVal = $('#sel-compras-modelo').value;
+  C.colModelo = (modeloVal !== '' && modeloVal !== '-1') ? Number(modeloVal) : null;
+  renderComprasPreview();
+}
 function renderWholesaleCumplimiento(){
   const objWholesale = STATE.circular.objetivoWholesale || 0;
   const el = $('#wholesale-cumpl');
@@ -1552,6 +1741,8 @@ function renderSupuestosStep(){
   $('#chk-wholesale-100').checked = STATE.wholesale.asumido;
   $('#wholesale-manual').style.display = STATE.wholesale.asumido ? 'none' : 'grid';
   renderWholesaleCumplimiento();
+  $('#inp-fecha-corte-compras').value = STATE.fechaCorteCompras || '';
+  renderComprasPreview();
 }
 function initStep5(){
   $('#chk-wholesale-100').addEventListener('change', (e) => {
@@ -1562,6 +1753,20 @@ function initStep5(){
   $('#inp-wholesale-unidades').addEventListener('input', (e) => {
     STATE.wholesale.unidades = parseFloat(e.target.value) || 0;
     renderWholesaleCumplimiento();
+  });
+  wireDropzone('drop-compras', 'file-compras', handleComprasFile);
+  $('#sel-compras-sheet').addEventListener('change', (e) => loadComprasSheet(e.target.value));
+  ['vin','fecha','modelo'].forEach(k => {
+    $('#sel-compras-' + k).addEventListener('change', (e) => {
+      const key = 'col' + k[0].toUpperCase() + k.slice(1);
+      const val = e.target.value;
+      STATE.compras[key] = (val === '' || val === '-1') ? null : Number(val);
+      renderComprasPreview();
+    });
+  });
+  $('#inp-fecha-corte-compras').addEventListener('change', (e) => {
+    STATE.fechaCorteCompras = e.target.value || STATE.fechaCorteCompras;
+    renderComprasPreview();
   });
   $('#btn-supuestos-next').addEventListener('click', unlockNext);
 }
@@ -1586,6 +1791,18 @@ function computeResults(){
   const wholesaleGate = wholesalePctCumpl >= 0.8;
   const elegible2d = retailPctCumpl >= 1 && wholesalePctCumpl >= 1;
 
+  // Control de compras: desde qué fecha el 2a ya viene neteado en la
+  // factura de compra (VIN a VIN contra el Excel del Paso 5), vs. las
+  // unidades compradas antes, que cobran el 2a en la liquidación del mes
+  // siguiente al patentamiento.
+  const comprasMap = comprasIndexByVin();
+  const fechaCorteCompras = parseFechaCompra(STATE.fechaCorteCompras) || parseFechaCompra('2026-06-01');
+  const comprasBucket = {
+    liquidacion: {unidades:0, monto:0},
+    neteado: {unidades:0, monto:0},
+    sinDato: {unidades:0, monto:0},
+  };
+
   let total2a = 0, total2b = 0, total2d = 0;
   const detail = patRows.map(r => {
     const m = STATE.matches[r.modelo] || {};
@@ -1608,13 +1825,29 @@ function computeResults(){
     const inc2b = (wholesaleGate && !excluirWholesale) ? precio * wholesalePct : 0;
     const inc2d = (elegible2d && !excluirRetail) ? (STATE.circular.monto2d / 1.21) : 0;
     total2a += inc2a; total2b += inc2b; total2d += inc2d;
-    return {...r, precio, retailPct, wholesalePct, inc2a, inc2b, inc2d, excluirRetail, excluirWholesale};
+
+    const vinKey = normVin(r.vin);
+    const fechaCompra = vinKey ? (comprasMap.get(vinKey) || null) : null;
+    let regimenRetail;
+    if(!fechaCompra) regimenRetail = 'sin_dato';
+    else regimenRetail = fechaCompra < fechaCorteCompras ? 'liquidacion' : 'neteado';
+    const bucketKey = regimenRetail === 'sin_dato' ? 'sinDato' : regimenRetail;
+    comprasBucket[bucketKey].unidades += 1;
+    comprasBucket[bucketKey].monto += inc2a;
+
+    return {...r, precio, retailPct, wholesalePct, inc2a, inc2b, inc2d, excluirRetail, excluirWholesale, fechaCompra, regimenRetail};
   });
 
   return {retailCount, objRetail, retailPctCumpl, wholesaleUnidades, objWholesale, wholesalePctCumpl,
-          retailGate, wholesaleGate, elegible2d, total2a, total2b, total2d, detail};
+          retailGate, wholesaleGate, elegible2d, total2a, total2b, total2d, detail,
+          comprasBucket, fechaCorteCompras};
 }
 
+function regimenLabel(r){
+  if(r === 'liquidacion') return '<span style="color:#8a5a00;">Liquidación</span>';
+  if(r === 'neteado') return '<span style="color:#1a7f37;">Neteado</span>';
+  return '<span style="color:#c0392b;">Sin dato</span>';
+}
 function renderResultadoStep(){
   const R = computeResults();
   LAST_RESULT = R;
@@ -1635,10 +1868,30 @@ function renderResultadoStep(){
       <td class="num">${money(d.precio)}</td>
       <td class="num">${pct(d.retailPct)}</td>
       <td class="num">${money(d.inc2a)}</td>
+      <td>${d.fechaCompra ? esc(d.fechaCompra.toLocaleDateString('es-AR')) : '—'}</td>
+      <td>${regimenLabel(d.regimenRetail)}</td>
       <td class="num">${pct(d.wholesalePct)}</td>
       <td class="num">${money(d.inc2b)}</td>
       <td class="num">${money(d.inc2d)}</td>
     </tr>`).join('');
+
+  const B = R.comprasBucket;
+  const hayCompras = STATE.compras.rows && STATE.compras.rows.length;
+  const controlComprasHtml = `
+    <div class="panel">
+      <h3>Control de compras <span style="font-weight:400;color:var(--ink-soft);">— cruce con liquidación</span></h3>
+      ${!hayCompras
+        ? `<div class="callout warn"><span class="ic">⚠</span> Todavía no cargaste el Excel de compras (Paso 5) — sin eso no se puede separar qué unidades cobran el 2a en la liquidación de las que ya lo cobraron neteado en la compra.</div>`
+        : `
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px;">Corte: compras desde <strong>${esc(R.fechaCorteCompras.toLocaleDateString('es-AR'))}</strong> ya vienen con el 2a neteado en la factura de compra; las anteriores lo cobran en la liquidación del mes siguiente al patentamiento.</p>
+        <div class="breakdown">
+          <div class="bcard"><div class="k">Pendiente de liquidación</div><div class="v">${money(B.liquidacion.monto)}</div><div class="x">${B.liquidacion.unidades} unidad(es) — compradas antes del corte</div></div>
+          <div class="bcard"><div class="k">Ya neteado en la compra</div><div class="v">${money(B.neteado.monto)}</div><div class="x">${B.neteado.unidades} unidad(es) — compradas desde el corte</div></div>
+          <div class="bcard"><div class="k">Sin dato de compra</div><div class="v">${money(B.sinDato.monto)}</div><div class="x">${B.sinDato.unidades} unidad(es) — falta VIN o no está en el Excel de compras</div></div>
+        </div>
+        ${B.sinDato.unidades ? `<div class="callout warn" style="margin-top:10px;"><span class="ic">⚠</span> Hay ${B.sinDato.unidades} unidad(es) sin fecha de compra encontrada — revisá que el VIN esté cargado en Patentamientos (Paso 3) y en el Excel de Compras (Paso 5).</div>` : ''}
+      `}
+    </div>`;
 
   $('#resultado-body').innerHTML = `
     <div class="resulthead">
@@ -1666,11 +1919,13 @@ function renderResultadoStep(){
       </div>
     </div>
 
+    ${controlComprasHtml}
+
     <div class="panel" style="padding:0;">
       <div style="padding:16px 18px 0;"><h3>Detalle por unidad</h3></div>
       <div class="tblwrap" style="border:none; max-height:480px; overflow:auto;">
         <table>
-          <thead><tr><th>Patente</th><th>Modelo</th><th class="num">Precio s/IVA</th><th class="num">% Retail</th><th class="num">$ Retail</th><th class="num">% Wholesale</th><th class="num">$ Wholesale</th><th class="num">$ 2d</th></tr></thead>
+          <thead><tr><th>Patente</th><th>Modelo</th><th class="num">Precio s/IVA</th><th class="num">% Retail</th><th class="num">$ Retail</th><th>Fecha compra</th><th>Régimen 2a</th><th class="num">% Wholesale</th><th class="num">$ Wholesale</th><th class="num">$ 2d</th></tr></thead>
           <tbody>${detailRows}</tbody>
         </table>
       </div>
@@ -1680,13 +1935,24 @@ function renderResultadoStep(){
 
 function exportCSV(){
   if(!LAST_RESULT) return;
-  const rows = [['Patente','Modelo','Precio s/IVA','% Retail','$ Retail (2a)','% Wholesale','$ Wholesale (2b)','$ Atado (2d)']];
-  LAST_RESULT.detail.forEach(d => rows.push([d.patente, d.modelo, Math.round(d.precio), (d.retailPct*100).toFixed(2)+'%', Math.round(d.inc2a), (d.wholesalePct*100).toFixed(2)+'%', Math.round(d.inc2b), Math.round(d.inc2d)]));
+  const regimenTexto = {liquidacion: 'Liquidación', neteado: 'Neteado', sin_dato: 'Sin dato'};
+  const rows = [['Patente','Modelo','Precio s/IVA','% Retail','$ Retail (2a)','Fecha compra','Régimen 2a','% Wholesale','$ Wholesale (2b)','$ Atado (2d)']];
+  LAST_RESULT.detail.forEach(d => rows.push([
+    d.patente, d.modelo, Math.round(d.precio), (d.retailPct*100).toFixed(2)+'%', Math.round(d.inc2a),
+    d.fechaCompra ? d.fechaCompra.toLocaleDateString('es-AR') : '',
+    regimenTexto[d.regimenRetail] || '',
+    (d.wholesalePct*100).toFixed(2)+'%', Math.round(d.inc2b), Math.round(d.inc2d),
+  ]));
   rows.push([]);
   rows.push(['TOTAL 2a', '', '', '', Math.round(LAST_RESULT.total2a)]);
-  rows.push(['TOTAL 2b', '', '', '', '', '', Math.round(LAST_RESULT.total2b)]);
-  rows.push(['TOTAL 2d', '', '', '', '', '', '', Math.round(LAST_RESULT.total2d)]);
-  rows.push(['TOTAL GENERAL', '', '', '', '', '', '', Math.round(LAST_RESULT.total2a+LAST_RESULT.total2b+LAST_RESULT.total2d)]);
+  rows.push(['TOTAL 2b', '', '', '', '', '', '', '', Math.round(LAST_RESULT.total2b)]);
+  rows.push(['TOTAL 2d', '', '', '', '', '', '', '', '', Math.round(LAST_RESULT.total2d)]);
+  rows.push(['TOTAL GENERAL', '', '', '', '', '', '', '', '', Math.round(LAST_RESULT.total2a+LAST_RESULT.total2b+LAST_RESULT.total2d)]);
+  rows.push([]);
+  const B = LAST_RESULT.comprasBucket;
+  rows.push(['2a pendiente de liquidación (compra antes del corte)', '', '', '', Math.round(B.liquidacion.monto), '', '', '', '', B.liquidacion.unidades + ' unidad(es)']);
+  rows.push(['2a ya neteado en la compra (compra desde el corte)', '', '', '', Math.round(B.neteado.monto), '', '', '', '', B.neteado.unidades + ' unidad(es)']);
+  rows.push(['2a sin dato de compra', '', '', '', Math.round(B.sinDato.monto), '', '', '', '', B.sinDato.unidades + ' unidad(es)']);
   const name = (STATE.terminal || 'incentivos').replace(/[^a-z0-9]+/gi,'_');
   downloadCSV(`incentivos_${name}.csv`, rows);
 }
@@ -1715,6 +1981,8 @@ function snapshotState(){
     matches: STATE.matches,
     tipoOverrides: STATE.tipoOverrides,
     wholesale: STATE.wholesale,
+    compras: { rows: STATE.compras.rows },
+    fechaCorteCompras: STATE.fechaCorteCompras,
   };
 }
 function restoreState(snap){
@@ -1727,6 +1995,8 @@ function restoreState(snap){
   STATE.matches = snap.matches || {};
   STATE.tipoOverrides = snap.tipoOverrides || {};
   STATE.wholesale = snap.wholesale || STATE.wholesale;
+  STATE.compras.rows = (snap.compras && snap.compras.rows) || [];
+  STATE.fechaCorteCompras = snap.fechaCorteCompras || STATE.fechaCorteCompras;
 }
 
 async function guardarEnPortal(){
