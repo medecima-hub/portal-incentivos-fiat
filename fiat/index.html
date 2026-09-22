@@ -574,10 +574,10 @@ details.raw pre{
         <div class="panel">
           <h3>Control de compras <span style="font-weight:400;color:var(--ink-soft);">(para cruzar con la liquidación)</span></h3>
           <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px;">
-            Desde el <strong id="fecha-corte-label">01/06/2026</strong> el incentivo 2a (Retail) ya viene neteado
+            Desde el <strong id="fecha-corte-label">01/06/2026</strong> el incentivo 2b (Wholesale) ya viene neteado
             en la factura de compra de la unidad. Las unidades compradas <strong>antes</strong> de esa fecha lo
             cobran recién en la liquidación del mes siguiente al patentamiento. Subí acá el Excel de compras
-            (con VIN y fecha de compra) para que el Paso 6 te divida el 2a entre "ya neteado" y "pendiente de
+            (con VIN y fecha de compra) para que el Paso 6 te divida el 2b entre "ya neteado" y "pendiente de
             liquidación", y así puedas cruzarlo directo contra lo que te liquida la terminal.
           </p>
           <div class="field" style="max-width:260px;margin-bottom:14px;">
@@ -821,14 +821,14 @@ const STATE = {
   wholesale: { asumido:true, unidades:null, pctManual:null },
   compras: {
     // Excel de compras (facturación de Stellantis al concesionario), para
-    // cruzar por VIN con los patentamientos y saber si el 2a de cada unidad
+    // cruzar por VIN con los patentamientos y saber si el 2b de cada unidad
     // ya viene neteado en la compra o se cobra en la liquidación del mes
     // siguiente al patentamiento (política vigente desde el 01/06/2026).
     fileName: null, sheetName: null, sheetNames: [], rawRows: [],
     colVin: null, colFecha: null, colModelo: null,
     rows: [], // [{vin, fecha, modelo}]
   },
-  fechaCorteCompras: '2026-06-01', // compras DESDE esta fecha ya vienen neteadas; antes, el 2a se liquida el mes siguiente al patentamiento
+  fechaCorteCompras: '2026-06-01', // compras DESDE esta fecha ya vienen neteadas; antes, el 2b se liquida el mes siguiente al patentamiento
 };
 
 const STEPS = [
@@ -1815,9 +1815,9 @@ function computeResults(){
   const wholesaleGate = wholesalePctCumpl >= 0.8;
   const elegible2d = retailPctCumpl >= 1 && wholesalePctCumpl >= 1;
 
-  // Control de compras: desde qué fecha el 2a ya viene neteado en la
+  // Control de compras: desde qué fecha el 2b ya viene neteado en la
   // factura de compra (VIN a VIN contra el Excel del Paso 5), vs. las
-  // unidades compradas antes, que cobran el 2a en la liquidación del mes
+  // unidades compradas antes, que cobran el 2b en la liquidación del mes
   // siguiente al patentamiento.
   const comprasMap = comprasIndexByVin();
   const fechaCorteCompras = parseFechaCompra(STATE.fechaCorteCompras) || parseFechaCompra('2026-06-01');
@@ -1852,14 +1852,14 @@ function computeResults(){
 
     const vinKey = normVin(r.vin);
     const fechaCompra = vinKey ? (comprasMap.get(vinKey) || null) : null;
-    let regimenRetail;
-    if(!fechaCompra) regimenRetail = 'sin_dato';
-    else regimenRetail = fechaCompra < fechaCorteCompras ? 'liquidacion' : 'neteado';
-    const bucketKey = regimenRetail === 'sin_dato' ? 'sinDato' : regimenRetail;
+    let regimen2b;
+    if(!fechaCompra) regimen2b = 'sin_dato';
+    else regimen2b = fechaCompra < fechaCorteCompras ? 'liquidacion' : 'neteado';
+    const bucketKey = regimen2b === 'sin_dato' ? 'sinDato' : regimen2b;
     comprasBucket[bucketKey].unidades += 1;
-    comprasBucket[bucketKey].monto += inc2a;
+    comprasBucket[bucketKey].monto += inc2b;
 
-    return {...r, precio, retailPct, wholesalePct, inc2a, inc2b, inc2d, excluirRetail, excluirWholesale, fechaCompra, regimenRetail};
+    return {...r, precio, retailPct, wholesalePct, inc2a, inc2b, inc2d, excluirRetail, excluirWholesale, fechaCompra, regimen2b};
   });
 
   return {retailCount, objRetail, retailPctCumpl, wholesaleUnidades, objWholesale, wholesalePctCumpl,
@@ -1892,10 +1892,10 @@ function renderResultadoStep(){
       <td class="num">${money(d.precio)}</td>
       <td class="num">${pct(d.retailPct)}</td>
       <td class="num">${money(d.inc2a)}</td>
-      <td>${d.fechaCompra ? esc(d.fechaCompra.toLocaleDateString('es-AR')) : '—'}</td>
-      <td>${regimenLabel(d.regimenRetail)}</td>
       <td class="num">${pct(d.wholesalePct)}</td>
       <td class="num">${money(d.inc2b)}</td>
+      <td>${d.fechaCompra ? esc(d.fechaCompra.toLocaleDateString('es-AR')) : '—'}</td>
+      <td>${regimenLabel(d.regimen2b)}</td>
       <td class="num">${money(d.inc2d)}</td>
     </tr>`).join('');
 
@@ -1905,9 +1905,9 @@ function renderResultadoStep(){
     <div class="panel">
       <h3>Control de compras <span style="font-weight:400;color:var(--ink-soft);">— cruce con liquidación</span></h3>
       ${!hayCompras
-        ? `<div class="callout warn"><span class="ic">⚠</span> Todavía no cargaste el Excel de compras (Paso 5) — sin eso no se puede separar qué unidades cobran el 2a en la liquidación de las que ya lo cobraron neteado en la compra.</div>`
+        ? `<div class="callout warn"><span class="ic">⚠</span> Todavía no cargaste el Excel de compras (Paso 5) — sin eso no se puede separar qué unidades cobran el 2b en la liquidación de las que ya lo cobraron neteado en la compra.</div>`
         : `
-        <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px;">Corte: compras desde <strong>${esc(R.fechaCorteCompras.toLocaleDateString('es-AR'))}</strong> ya vienen con el 2a neteado en la factura de compra; las anteriores lo cobran en la liquidación del mes siguiente al patentamiento.</p>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 12px;">Corte: compras desde <strong>${esc(R.fechaCorteCompras.toLocaleDateString('es-AR'))}</strong> ya vienen con el 2b neteado en la factura de compra; las anteriores lo cobran en la liquidación del mes siguiente al patentamiento.</p>
         <div class="breakdown">
           <div class="bcard"><div class="k">Pendiente de liquidación</div><div class="v">${money(B.liquidacion.monto)}</div><div class="x">${B.liquidacion.unidades} unidad(es) — compradas antes del corte</div></div>
           <div class="bcard"><div class="k">Ya neteado en la compra</div><div class="v">${money(B.neteado.monto)}</div><div class="x">${B.neteado.unidades} unidad(es) — compradas desde el corte</div></div>
@@ -1949,7 +1949,7 @@ function renderResultadoStep(){
       <div style="padding:16px 18px 0;"><h3>Detalle por unidad</h3></div>
       <div class="tblwrap" style="border:none; max-height:480px; overflow:auto;">
         <table>
-          <thead><tr><th>Patente</th><th>Modelo</th><th class="num">Precio s/IVA</th><th class="num">% Retail</th><th class="num">$ Retail</th><th>Fecha compra</th><th>Régimen 2a</th><th class="num">% Wholesale</th><th class="num">$ Wholesale</th><th class="num">$ 2d</th></tr></thead>
+          <thead><tr><th>Patente</th><th>Modelo</th><th class="num">Precio s/IVA</th><th class="num">% Retail</th><th class="num">$ Retail</th><th class="num">% Wholesale</th><th class="num">$ Wholesale</th><th>Fecha compra</th><th>Régimen 2b</th><th class="num">$ 2d</th></tr></thead>
           <tbody>${detailRows}</tbody>
         </table>
       </div>
@@ -1960,23 +1960,24 @@ function renderResultadoStep(){
 function exportCSV(){
   if(!LAST_RESULT) return;
   const regimenTexto = {liquidacion: 'Liquidación', neteado: 'Neteado', sin_dato: 'Sin dato'};
-  const rows = [['Patente','Modelo','Precio s/IVA','% Retail','$ Retail (2a)','Fecha compra','Régimen 2a','% Wholesale','$ Wholesale (2b)','$ Atado (2d)']];
+  const rows = [['Patente','Modelo','Precio s/IVA','% Retail','$ Retail (2a)','% Wholesale','$ Wholesale (2b)','Fecha compra','Régimen 2b','$ Atado (2d)']];
   LAST_RESULT.detail.forEach(d => rows.push([
     d.patente, d.modelo, Math.round(d.precio), (d.retailPct*100).toFixed(2)+'%', Math.round(d.inc2a),
+    (d.wholesalePct*100).toFixed(2)+'%', Math.round(d.inc2b),
     d.fechaCompra ? d.fechaCompra.toLocaleDateString('es-AR') : '',
-    regimenTexto[d.regimenRetail] || '',
-    (d.wholesalePct*100).toFixed(2)+'%', Math.round(d.inc2b), Math.round(d.inc2d),
+    regimenTexto[d.regimen2b] || '',
+    Math.round(d.inc2d),
   ]));
   rows.push([]);
   rows.push(['TOTAL 2a', '', '', '', Math.round(LAST_RESULT.total2a)]);
-  rows.push(['TOTAL 2b', '', '', '', '', '', '', '', Math.round(LAST_RESULT.total2b)]);
+  rows.push(['TOTAL 2b', '', '', '', '', '', Math.round(LAST_RESULT.total2b)]);
   rows.push(['TOTAL 2d', '', '', '', '', '', '', '', '', Math.round(LAST_RESULT.total2d)]);
   rows.push(['TOTAL GENERAL', '', '', '', '', '', '', '', '', Math.round(LAST_RESULT.total2a+LAST_RESULT.total2b+LAST_RESULT.total2d)]);
   rows.push([]);
   const B = LAST_RESULT.comprasBucket;
-  rows.push(['2a pendiente de liquidación (compra antes del corte)', '', '', '', Math.round(B.liquidacion.monto), '', '', '', '', B.liquidacion.unidades + ' unidad(es)']);
-  rows.push(['2a ya neteado en la compra (compra desde el corte)', '', '', '', Math.round(B.neteado.monto), '', '', '', '', B.neteado.unidades + ' unidad(es)']);
-  rows.push(['2a sin dato de compra', '', '', '', Math.round(B.sinDato.monto), '', '', '', '', B.sinDato.unidades + ' unidad(es)']);
+  rows.push(['2b pendiente de liquidación (compra antes del corte)', '', '', '', '', '', Math.round(B.liquidacion.monto), '', '', B.liquidacion.unidades + ' unidad(es)']);
+  rows.push(['2b ya neteado en la compra (compra desde el corte)', '', '', '', '', '', Math.round(B.neteado.monto), '', '', B.neteado.unidades + ' unidad(es)']);
+  rows.push(['2b sin dato de compra', '', '', '', '', '', Math.round(B.sinDato.monto), '', '', B.sinDato.unidades + ' unidad(es)']);
   const name = (STATE.terminal || 'incentivos').replace(/[^a-z0-9]+/gi,'_');
   downloadCSV(`incentivos_${name}.csv`, rows);
 }
