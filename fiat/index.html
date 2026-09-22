@@ -1581,14 +1581,38 @@ function normVin(v){
 }
 function parseFechaCompra(v){
   if(v instanceof Date && !isNaN(v)) return v;
-  if(typeof v === 'number' && typeof XLSX !== 'undefined' && XLSX.SSF && XLSX.SSF.parse_date_code){
-    const d = XLSX.SSF.parse_date_code(v);
-    if(d) return new Date(d.y, d.m - 1, d.d);
+  if(typeof v === 'number' && Number.isFinite(v)){
+    // Formato compacto AAAAMMDD como número (típico de exports SAP), ej: 20260331
+    const asInt = Math.trunc(v);
+    if(asInt >= 19000101 && asInt <= 21001231 && String(asInt).length === 8){
+      const s = String(asInt);
+      const y = Number(s.slice(0, 4)), mo = Number(s.slice(4, 6)), d = Number(s.slice(6, 8));
+      if(mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return new Date(y, mo - 1, d);
+    }
+    if(typeof XLSX !== 'undefined' && XLSX.SSF && XLSX.SSF.parse_date_code){
+      const d = XLSX.SSF.parse_date_code(v);
+      if(d) return new Date(d.y, d.m - 1, d.d);
+    }
   }
   if(typeof v === 'string' && v.trim()){
     const s = v.trim();
-    let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    // AAAAMMDD como texto (típico de exports SAP), ej: "20260331"
+    let m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if(m){
+      const mo = Number(m[2]), d = Number(m[3]);
+      if(mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return new Date(Number(m[1]), mo - 1, d);
+    }
+    // DD/MM/AAAA, DD-MM-AAAA o DD.MM.AAAA
+    m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
     if(m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    // DD/MM/AA, DD-MM-AA o DD.MM.AA (año de 2 dígitos)
+    m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2})$/);
+    if(m){
+      const yy = Number(m[3]);
+      const year = yy <= 79 ? 2000 + yy : 1900 + yy;
+      return new Date(year, Number(m[2]) - 1, Number(m[1]));
+    }
+    // AAAA-MM-DD (ISO)
     m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
     if(m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
     const d2 = new Date(s);
